@@ -648,6 +648,7 @@
         <div class="table-wrap" id="admin-pending-wrap" style="display:none">
           <table><thead><tr><th>Username</th><th>Registered</th><th></th></tr></thead><tbody id="admin-pending-body"></tbody></table>
         </div>
+
       </div>
 
       <div class="section-title">All Players</div>
@@ -1618,7 +1619,10 @@ const App = (() => {
         document.getElementById('admin-pending-body').innerHTML = pending.map(p => `<tr>
           <td><strong>${esc(p.username)}</strong></td>
           <td class="muted">${fmtDate(p.created_at)}</td>
-          <td><button class="btn btn-green btn-sm" data-uid="${p.id}" onclick="App.approveUser(parseInt(this.dataset.uid))">✓ Approve</button></td>
+          <td><div style="display:flex;gap:5px">
+            <button class="btn btn-green btn-sm" data-uid="${p.id}" onclick="App.approveUser(parseInt(this.dataset.uid))">✓ Approve</button>
+            <button class="btn btn-red btn-sm" data-uid="${p.id}" data-name="${esc(p.username)}" onclick="App.deletePendingUser(parseInt(this.dataset.uid), this.dataset.name)">Delete</button>
+          </div></td>
         </tr>`).join('');
       } else {
         document.getElementById('admin-pending-empty').style.display = '';
@@ -1786,6 +1790,15 @@ const App = (() => {
     } catch(err) { toast(err.message, 'error'); }
   }
 
+  async function deletePendingUser(userId, username) {
+    if (!confirm(`Permanently delete "${username}"? This cannot be undone.`)) return;
+    try {
+      const r = await api('DELETE', `/api/admin/users/${userId}`);
+      toast(r.message, 'success');
+      loadAdmin();
+    } catch(err) { toast(err.message, 'error'); }
+  }
+
   async function revokeUser(userId) {
     if (!confirm('Revoke this user\'s approval? They will no longer be able to join games.')) return;
     try {
@@ -1856,7 +1869,7 @@ const App = (() => {
     openSellModal, closeSellModal, updateSellModalTotal, setSellModalMax, executeSellModal,
     openCloseFuturesModal, closeCloseFuturesModal, updateCfmTotal, setCfmMax, executeClosePosition,
     editGame, resetAdminForm, saveGameConfig,
-    approveUser, revokeUser,
+    approveUser, revokeUser, deletePendingUser,
     openDeleteModal, closeDeleteModal, confirmDeleteGame,
   };
 })();

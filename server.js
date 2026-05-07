@@ -905,6 +905,16 @@ app.post('/api/admin/users/:userId/revoke', requireAdmin, (req, res) => {
   res.json({ message: `${target.username}'s approval has been revoked.` });
 });
 
+app.delete('/api/admin/users/:userId', requireAdmin, (req, res) => {
+  const target = db.prepare('SELECT id, username, is_admin, is_approved FROM users WHERE id = ?').get(req.params.userId);
+  if (!target) return res.status(404).json({ error: 'User not found' });
+  if (target.is_admin) return res.status(400).json({ error: 'Cannot delete an admin account.' });
+  if (target.is_approved) return res.status(400).json({ error: 'Cannot delete an approved user. Revoke approval first, or delete via game management.' });
+  if (target.id === req.user.id) return res.status(400).json({ error: 'Cannot delete your own account.' });
+  db.prepare('DELETE FROM users WHERE id = ?').run(target.id);
+  res.json({ message: `${target.username} has been deleted.` });
+});
+
 // ── Background order processor ────────────────────────────────────────────────
 async function fillOrder(order) {
   const game = db.prepare('SELECT * FROM game_config WHERE id = ?').get(order.game_id);
