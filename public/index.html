@@ -884,8 +884,9 @@ const App = (() => {
         </div>
       `).join('');
       dd.style.display = 'block';
-    } catch {
-      dd.style.display = 'none';
+    } catch (err) {
+      dd.innerHTML = `<div class="search-item" style="color:var(--red)">Search error: ${err.message}</div>`;
+      dd.style.display = 'block';
     }
   }
 

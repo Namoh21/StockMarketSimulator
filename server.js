@@ -27,7 +27,7 @@ async function getQuote(symbol) {
   const cached = priceCache.get(sym);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) return cached;
 
-  const q = await yf.quote(sym);
+  const q = await yf.quote(sym, {}, { validateResult: false });
   if (!q || q.regularMarketPrice == null) throw new Error(`No price data for ${sym}`);
 
   const data = {
@@ -246,18 +246,19 @@ app.get('/api/stocks/search', async (req, res) => {
   const { q } = req.query;
   if (!q || q.length < 1) return res.json([]);
   try {
-    const results = await yf.search(q, { quotesCount: 12, newsCount: 0 });
+    const results = await yf.search(q, { quotesCount: 12, newsCount: 0 }, { validateResult: false });
     const filtered = (results.quotes || [])
-      .filter(r => r.isYahooFinance && r.quoteType === 'EQUITY' && r.symbol && !r.symbol.includes('.'))
+      .filter(r => r.quoteType === 'EQUITY' && r.symbol && !r.symbol.includes('.'))
       .slice(0, 8)
       .map(r => ({
         symbol: r.symbol,
-        name: r.longname || r.shortname || r.symbol,
+        name: r.longname || r.shortname || r.symbol || r.dispSecIndFlag || '',
         exchange: r.exchange || '',
         type: r.quoteType,
       }));
     res.json(filtered);
   } catch (err) {
+    console.error('Search error:', err.message);
     res.status(500).json({ error: 'Search failed: ' + err.message });
   }
 });
@@ -274,7 +275,7 @@ app.get('/api/stocks/chart/:symbol', async (req, res) => {
   try {
     const symbol = req.params.symbol.toUpperCase();
     const period1 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const result = await yf.chart(symbol, { period1, interval: '1d' });
+    const result = await yf.chart(symbol, { period1, interval: '1d' }, { validateResult: false });
     const quotes = (result.quotes || [])
       .filter(q => q.close != null)
       .map(q => ({ date: q.date, close: q.close }));
