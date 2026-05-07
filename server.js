@@ -730,15 +730,21 @@ app.get('/api/games/:gameId/futures/history', requireAuth, loadGame, (req, res) 
 // Delete a game and all associated data
 app.delete('/api/games/:gameId', requireAdmin, loadGame, (req, res) => {
   const { id, title } = req.game;
-  db.transaction(() => {
-    db.prepare('DELETE FROM futures_transactions WHERE game_id = ?').run(id);
-    db.prepare('DELETE FROM futures_positions  WHERE game_id = ?').run(id);
-    db.prepare('DELETE FROM transactions       WHERE game_id = ?').run(id);
-    db.prepare('DELETE FROM holdings           WHERE game_id = ?').run(id);
-    db.prepare('DELETE FROM portfolios         WHERE game_id = ?').run(id);
-    db.prepare('DELETE FROM game_config        WHERE id = ?').run(id);
-  })();
-  res.json({ message: `"${title}" and all its data have been deleted.` });
+  try {
+    db.transaction(() => {
+      db.prepare('DELETE FROM pending_orders      WHERE game_id = ?').run(id);
+      db.prepare('DELETE FROM futures_transactions WHERE game_id = ?').run(id);
+      db.prepare('DELETE FROM futures_positions   WHERE game_id = ?').run(id);
+      db.prepare('DELETE FROM transactions        WHERE game_id = ?').run(id);
+      db.prepare('DELETE FROM holdings            WHERE game_id = ?').run(id);
+      db.prepare('DELETE FROM portfolios          WHERE game_id = ?').run(id);
+      db.prepare('DELETE FROM game_config         WHERE id = ?').run(id);
+    })();
+    res.json({ message: `"${title}" and all its data have been deleted.` });
+  } catch (err) {
+    console.error('Delete game error:', err.message);
+    res.status(500).json({ error: 'Failed to delete game: ' + err.message });
+  }
 });
 
 // ── Admin ─────────────────────────────────────────────────────────────────────
