@@ -283,11 +283,18 @@ function gameStatus(game) {
 }
 
 function loadGame(req, res, next) {
-  const game = db.prepare('SELECT * FROM game_config WHERE id = ?').get(req.params.gameId);
-  if (!game) return res.status(404).json({ error: 'Game not found' });
-  // keep join_password on req.game for internal use; publicGame() strips it before sending to clients
-  req.game = { ...game, markets: JSON.parse(game.markets), status: gameStatus(game) };
-  next();
+  try {
+    const game = db.prepare('SELECT * FROM game_config WHERE id = ?').get(req.params.gameId);
+    if (!game) return res.status(404).json({ error: 'Game not found' });
+    let markets;
+    try { markets = JSON.parse(game.markets); } catch { markets = ['NYSE', 'NASDAQ']; }
+    // keep join_password on req.game for internal use; publicGame() strips it before sending to clients
+    req.game = { ...game, markets, status: gameStatus(game) };
+    next();
+  } catch (err) {
+    console.error('loadGame error:', err.message);
+    res.status(500).json({ error: 'Failed to load game: ' + err.message });
+  }
 }
 
 function ensurePortfolio(userId, gameId, startingCash) {
@@ -561,11 +568,27 @@ app.get('/api/games/:gameId/leaderboard', requireAuth, loadGame, async (req, res
 });
 
 app.get('/api/games/:gameId/players', requireAdmin, loadGame, (req, res) => {
-  res.json(db.prepare(
-    `SELECT u.id, u.username, u.email, u.is_admin, p.cash_balance, p.joined_at
-     FROM portfolios p JOIN users u ON p.user_id = u.id
-     WHERE p.game_id = ? ORDER BY p.joined_at`
-  ).all(req.game.id));
+  try {
+    // joined_at may be missing on very old databases — fall back gracefully
+    let rows;
+    try {
+      rows = db.prepare(
+        `SELECT u.id, u.username, u.email, u.is_admin, p.cash_balance, p.joined_at
+         FROM portfolios p JOIN users u ON p.user_id = u.id
+         WHERE p.game_id = ? ORDER BY p.joined_at`
+      ).all(req.game.id);
+    } catch {
+      rows = db.prepare(
+        `SELECT u.id, u.username, u.email, u.is_admin, p.cash_balance
+         FROM portfolios p JOIN users u ON p.user_id = u.id
+         WHERE p.game_id = ?`
+      ).all(req.game.id);
+    }
+    res.json(rows);
+  } catch (err) {
+    console.error('GET /players error:', err.message);
+    res.status(500).json({ error: 'Failed to load players: ' + err.message });
+  }
 });
 
 // Remove a player from one game only — their account and other games are untouched
@@ -1095,5 +1118,11 @@ setInterval(processAllPendingOrders, 60_000);
 
 // ── Catch-all → SPA ──────────────────────────────────────────────────────────
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+
+// ── Global error handler — catches any unhandled throw in route handlers ──────
+app.use((err, req, res, _next) => {
+  console.error(`[ERROR] ${req.method} ${req.path}:`, err.message);
+  if (!res.headersSent) res.status(500).json({ error: err.message || 'Internal server error' });
+});
 
 app.listen(PORT, '0.0.0.0', () => console.log(`\n  StockArena running at http://0.0.0.0:${PORT}\n`));
