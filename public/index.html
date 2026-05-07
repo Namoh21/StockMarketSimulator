@@ -1163,8 +1163,16 @@ const App = (() => {
       document.getElementById('trade-shares').value = '';
       if (orderType === 'limit') document.getElementById('limit-price').value = '';
       updateTradeTotal();
-    } catch(err) { errEl.textContent = err.message; }
-    finally { btn.disabled = false; setTradeType(tradeType); }
+      // Show a "Done" state briefly before resetting the button
+      btn.disabled = false;
+      btn.className = 'btn btn-full btn-ghost';
+      btn.innerHTML = '✓ Order Placed';
+      setTimeout(() => setTradeType(tradeType), 2000);
+    } catch(err) {
+      errEl.textContent = err.message;
+      btn.disabled = false;
+      setTradeType(tradeType);
+    }
   }
 
   // ── Futures ────────────────────────────────────────────────────────────────
