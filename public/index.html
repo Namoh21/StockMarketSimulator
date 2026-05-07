@@ -1082,11 +1082,21 @@ const App = (() => {
   }
 
   function setTradeType(type) {
-    tradeType=type;
-    document.querySelectorAll('.trade-tab').forEach(b=>b.classList.toggle('active',b.classList.contains(type)));
-    const btn=document.getElementById('trade-submit-btn'),lbl=document.getElementById('trade-submit-label'),mb=document.getElementById('max-btn');
-    if(type==='buy'){btn.className='btn btn-full btn-green';lbl.textContent='Buy';mb.textContent='Max';}
-    else{btn.className='btn btn-full btn-red';lbl.textContent='Sell';mb.textContent='Sell All';}
+    tradeType = type;
+    document.querySelectorAll('.trade-tab').forEach(b => b.classList.toggle('active', b.classList.contains(type)));
+    const btn = document.getElementById('trade-submit-btn');
+    const lbl = document.getElementById('trade-submit-label');
+    const mb  = document.getElementById('max-btn');
+    if (!btn || !lbl) return; // trade form not currently in DOM
+    if (type === 'buy') {
+      btn.className  = 'btn btn-full btn-green';
+      lbl.textContent = 'Buy';
+      if (mb) mb.textContent = 'Max';
+    } else {
+      btn.className  = 'btn btn-full btn-red';
+      lbl.textContent = 'Sell';
+      if (mb) mb.textContent = 'Sell All';
+    }
     updateTradeTotal();
   }
 
@@ -1144,7 +1154,8 @@ const App = (() => {
     }
 
     const btn = document.getElementById('trade-submit-btn');
-    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+    btn.disabled = true;
+    document.getElementById('trade-submit-label').innerHTML = '<span class="spinner"></span>';
     try {
       const body = { symbol: currentSymbol, type: tradeType, order_type: orderType, shares };
       if (orderType === 'limit') body.limit_price = limitPrice;
@@ -1262,7 +1273,7 @@ const App = (() => {
     errEl.textContent='';
     if(!selectedFutures){errEl.textContent='Select a contract first.';return;}
     if(!contracts||contracts<=0){errEl.textContent='Enter a valid number of contracts.';return;}
-    const btn=document.getElementById('ft-submit-btn'); btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
+    const btn=document.getElementById('ft-submit-btn'); btn.disabled=true; document.getElementById('ft-submit-label').innerHTML='<span class="spinner"></span>';
     try {
       const r=await api('POST',`/api/games/${currentGameId}/futures/open`,{symbol:selectedFutures.symbol,direction:futuresDir,contracts});
       toast(r.message,'success');
@@ -1445,7 +1456,7 @@ const App = (() => {
     const s=parseFloat(document.getElementById('sell-modal-shares').value),errEl=document.getElementById('sell-modal-error');errEl.textContent='';
     if(!s||s<=0){errEl.textContent='Enter a valid quantity.';return;}
     if(s>smMaxShares+0.000001){errEl.textContent=`You only own ${fmtShares(smMaxShares)} share(s).`;return;}
-    const btn=document.getElementById('sell-modal-btn');btn.disabled=true;btn.innerHTML='<span class="spinner"></span>';
+    const btn=document.getElementById('sell-modal-btn');btn.disabled=true;document.getElementById('sell-modal-label').innerHTML='<span class="spinner"></span>';
     try{const r=await api('POST',`/api/games/${currentGameId}/trades/sell`,{symbol:smSymbol,shares:s});closeSellModal();toast(r.message,'success');await loadPortfolio();}
     catch(err){errEl.textContent=err.message;btn.disabled=false;document.getElementById('sell-modal-label').textContent=`Sell ${smSymbol}`;}
   }
@@ -1477,7 +1488,7 @@ const App = (() => {
     const c=parseFloat(document.getElementById('cfm-contracts').value),errEl=document.getElementById('cfm-error');errEl.textContent='';
     if(!c||c<=0){errEl.textContent='Enter contracts to close.';return;}
     if(c>cfmMax+0.000001){errEl.textContent=`You only have ${fmtShares(cfmMax)} open.`;return;}
-    const btn=document.getElementById('cfm-btn');btn.disabled=true;btn.innerHTML='<span class="spinner"></span>';
+    const btn=document.getElementById('cfm-btn');btn.disabled=true;document.getElementById('cfm-label').innerHTML='<span class="spinner"></span>';
     try{const r=await api('POST',`/api/games/${currentGameId}/futures/close`,{symbol:cfmSymbol,contracts:c});closeCloseFuturesModal();toast(r.message,'success');await loadPortfolio();}
     catch(err){errEl.textContent=err.message;btn.disabled=false;document.getElementById('cfm-label').textContent=`Close ${cfmSymbol}`;}
   }
@@ -1501,7 +1512,7 @@ const App = (() => {
   async function confirmDeleteGame() {
     if (!deleteGameId) return;
     const btn = document.getElementById('delete-confirm-btn');
-    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+    btn.disabled = true; btn.textContent = '…';
     try {
       const r = await api('DELETE', `/api/games/${deleteGameId}`);
       closeDeleteModal();
