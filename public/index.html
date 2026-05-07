@@ -226,6 +226,22 @@
 </head>
 <body>
 
+<!-- ══ PENDING APPROVAL ═══════════════════════════════════════════════════════ -->
+<div id="pending-shell" style="display:none;align-items:center;justify-content:center;min-height:100vh;padding:20px;background:var(--bg)">
+  <div class="auth-card" style="text-align:center">
+    <div style="font-size:48px;margin-bottom:16px">⏳</div>
+    <h2 style="font-size:20px;font-weight:800;margin-bottom:8px">Account Pending Approval</h2>
+    <p style="color:var(--muted);font-size:14px;line-height:1.6;margin-bottom:20px">
+      Your account has been created but needs admin approval before you can join games.<br>
+      Check back soon — an admin will review your account.
+    </p>
+    <div class="info-box" style="text-align:left;margin-bottom:20px">
+      <strong>Registered as:</strong> <span id="pending-username"></span>
+    </div>
+    <button class="btn btn-ghost btn-full" onclick="App.logout()">Sign out</button>
+  </div>
+</div>
+
 <!-- ══ AUTH ══════════════════════════════════════════════════════════════════ -->
 <div id="auth-shell">
   <div class="auth-card">
@@ -623,8 +639,19 @@
         <div id="admin-save-note" class="shares-hint" style="margin-top:8px">Starting cash cannot be changed after players join. Start date cannot be changed once game begins.</div>
       </div>
 
-      <div class="section-title" style="margin-top:28px">All Players</div>
-      <div class="card"><div class="table-wrap"><table><thead><tr><th>Username</th><th>Email</th><th>Role</th><th>Joined</th></tr></thead><tbody id="admin-players-body"></tbody></table></div></div>
+      <div class="section-title" style="margin-top:28px">
+        Pending Approval
+        <span id="admin-pending-count" class="tag">0</span>
+      </div>
+      <div class="card" style="margin-bottom:16px">
+        <div id="admin-pending-empty" class="empty" style="padding:20px"><div class="empty-icon">✅</div><div class="empty-text">No accounts waiting for approval.</div></div>
+        <div class="table-wrap" id="admin-pending-wrap" style="display:none">
+          <table><thead><tr><th>Username</th><th>Registered</th><th></th></tr></thead><tbody id="admin-pending-body"></tbody></table>
+        </div>
+      </div>
+
+      <div class="section-title">All Players</div>
+      <div class="card"><div class="table-wrap"><table><thead><tr><th>Username</th><th>Role</th><th>Status</th><th>Joined</th><th></th></tr></thead><tbody id="admin-players-body"></tbody></table></div></div>
     </div>
 
   </main>
@@ -833,12 +860,20 @@ const App = (() => {
     token=null; user=null; exitGame();
     localStorage.removeItem('sa_token'); clearInterval(refreshTimer);
     document.getElementById('app-shell').style.display='none';
+    document.getElementById('pending-shell').style.display='none';
     document.getElementById('auth-shell').style.display='flex';
     switchAuthTab('login');
   }
 
   function showApp() {
     document.getElementById('auth-shell').style.display='none';
+    if (!user.is_approved) {
+      document.getElementById('pending-shell').style.display='flex';
+      document.getElementById('app-shell').style.display='none';
+      document.getElementById('pending-username').textContent=user.username;
+      return;
+    }
+    document.getElementById('pending-shell').style.display='none';
     document.getElementById('app-shell').style.display='flex';
     document.getElementById('nav-username').textContent=user.username;
     if (user.is_admin) { document.getElementById('nav-admin').style.display=''; document.getElementById('nav-admin-badge').style.display=''; }
@@ -1574,11 +1609,30 @@ const App = (() => {
             </div></td>
           </tr>`).join('')}</tbody>
         </table></div>` : '<div class="muted" style="margin-bottom:16px">No simulations yet.</div>';
-      // Players
-      document.getElementById('admin-players-body').innerHTML=players.map(p=>`<tr>
-        <td><strong>${esc(p.username)}</strong></td><td class="muted">${esc(p.email)}</td>
+      // Pending approval
+      const pending = players.filter(p => !p.is_approved);
+      document.getElementById('admin-pending-count').textContent = pending.length;
+      if (pending.length) {
+        document.getElementById('admin-pending-empty').style.display = 'none';
+        document.getElementById('admin-pending-wrap').style.display = '';
+        document.getElementById('admin-pending-body').innerHTML = pending.map(p => `<tr>
+          <td><strong>${esc(p.username)}</strong></td>
+          <td class="muted">${fmtDate(p.created_at)}</td>
+          <td><button class="btn btn-green btn-sm" data-uid="${p.id}" onclick="App.approveUser(parseInt(this.dataset.uid))">✓ Approve</button></td>
+        </tr>`).join('');
+      } else {
+        document.getElementById('admin-pending-empty').style.display = '';
+        document.getElementById('admin-pending-wrap').style.display = 'none';
+      }
+
+      // All players
+      document.getElementById('admin-players-body').innerHTML=players.filter(p=>p.is_approved).map(p=>`<tr>
+        <td><strong>${esc(p.username)}</strong></td>
         <td>${p.is_admin?'<span class="badge badge-admin">ADMIN</span>':'<span class="muted">Player</span>'}</td>
+        <td><span class="green" style="font-size:12px">✓ Approved</span></td>
         <td class="muted">${fmtDate(p.created_at)}</td>
+        <td>${!p.is_admin?`<button class="btn btn-ghost btn-sm" data-uid="${p.id}" onclick="App.revokeUser(parseInt(this.dataset.uid))">Revoke</button>`:''}
+        </td>
       </tr>`).join('');
     } catch(err){console.error(err);}
   }
@@ -1723,6 +1777,24 @@ const App = (() => {
     catch(err){errEl.textContent=err.message;btn.disabled=false;document.getElementById('cfm-label').textContent=`Close ${cfmSymbol}`;}
   }
 
+  // ── User approval ─────────────────────────────────────────────────────────
+  async function approveUser(userId) {
+    try {
+      const r = await api('POST', `/api/admin/users/${userId}/approve`);
+      toast(r.message, 'success');
+      loadAdmin();
+    } catch(err) { toast(err.message, 'error'); }
+  }
+
+  async function revokeUser(userId) {
+    if (!confirm('Revoke this user\'s approval? They will no longer be able to join games.')) return;
+    try {
+      const r = await api('POST', `/api/admin/users/${userId}/revoke`);
+      toast(r.message, 'info');
+      loadAdmin();
+    } catch(err) { toast(err.message, 'error'); }
+  }
+
   // ── Delete game modal ─────────────────────────────────────────────────────
   let deleteGameId = null;
   function openDeleteModal(id, title, playerCount) {
@@ -1784,6 +1856,7 @@ const App = (() => {
     openSellModal, closeSellModal, updateSellModalTotal, setSellModalMax, executeSellModal,
     openCloseFuturesModal, closeCloseFuturesModal, updateCfmTotal, setCfmMax, executeClosePosition,
     editGame, resetAdminForm, saveGameConfig,
+    approveUser, revokeUser,
     openDeleteModal, closeDeleteModal, confirmDeleteGame,
   };
 })();

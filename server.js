@@ -299,9 +299,9 @@ app.post('/api/auth/register', async (req, res) => {
     const hash = await bcrypt.hash(password, 10);
     const isFirst = db.prepare('SELECT COUNT(*) as c FROM users').get().c === 0;
     const { lastInsertRowid } = db.prepare(
-      'INSERT INTO users (username, email, password_hash, is_admin) VALUES (?, ?, ?, ?)'
-    ).run(username.trim(), email.trim().toLowerCase(), hash, isFirst ? 1 : 0);
-    const user  = db.prepare('SELECT id, username, email, is_admin FROM users WHERE id = ?').get(lastInsertRowid);
+      'INSERT INTO users (username, email, password_hash, is_admin, is_approved) VALUES (?, ?, ?, ?, ?)'
+    ).run(username.trim(), email.trim().toLowerCase(), hash, isFirst ? 1 : 0, isFirst ? 1 : 0);
+    const user  = db.prepare('SELECT id, username, email, is_admin, is_approved FROM users WHERE id = ?').get(lastInsertRowid);
     const token = jwt.sign({ id: user.id, username: user.username, is_admin: user.is_admin }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ token, user });
   } catch (err) {
@@ -319,11 +319,11 @@ app.post('/api/auth/login', async (req, res) => {
   if (!user || !(await bcrypt.compare(password, user.password_hash)))
     return res.status(401).json({ error: 'Invalid credentials' });
   const token = jwt.sign({ id: user.id, username: user.username, is_admin: user.is_admin }, JWT_SECRET, { expiresIn: '7d' });
-  res.json({ token, user: { id: user.id, username: user.username, email: user.email, is_admin: user.is_admin } });
+  res.json({ token, user: { id: user.id, username: user.username, email: user.email, is_admin: user.is_admin, is_approved: user.is_approved } });
 });
 
 app.get('/api/auth/me', requireAuth, (req, res) => {
-  const user = db.prepare('SELECT id, username, email, is_admin FROM users WHERE id = ?').get(req.user.id);
+  const user = db.prepare('SELECT id, username, email, is_admin, is_approved FROM users WHERE id = ?').get(req.user.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
   res.json(user);
 });
@@ -420,6 +420,9 @@ app.put('/api/games/:gameId', requireAdmin, loadGame, (req, res) => {
 // Join a game (creates portfolio if not already joined)
 app.post('/api/games/:gameId/join', requireAuth, loadGame, (req, res) => {
   const game = req.game;
+  const dbUser = db.prepare('SELECT is_approved FROM users WHERE id = ?').get(req.user.id);
+  if (!dbUser?.is_approved)
+    return res.status(403).json({ error: 'Your account is pending admin approval. You cannot join games yet.' });
   if (game.status === 'ended')
     return res.status(400).json({ error: 'This game has already ended' });
   const existing = db.prepare('SELECT * FROM portfolios WHERE user_id = ? AND game_id = ?').get(req.user.id, game.id);
@@ -884,7 +887,22 @@ app.delete('/api/games/:gameId', requireAdmin, loadGame, (req, res) => {
 
 // ── Admin ─────────────────────────────────────────────────────────────────────
 app.get('/api/admin/players', requireAdmin, (req, res) => {
-  res.json(db.prepare('SELECT id, username, email, is_admin, created_at FROM users ORDER BY created_at').all());
+  res.json(db.prepare('SELECT id, username, email, is_admin, is_approved, created_at FROM users ORDER BY created_at').all());
+});
+
+app.post('/api/admin/users/:userId/approve', requireAdmin, (req, res) => {
+  const target = db.prepare('SELECT id, username FROM users WHERE id = ?').get(req.params.userId);
+  if (!target) return res.status(404).json({ error: 'User not found' });
+  db.prepare('UPDATE users SET is_approved = 1 WHERE id = ?').run(target.id);
+  res.json({ message: `${target.username} has been approved.` });
+});
+
+app.post('/api/admin/users/:userId/revoke', requireAdmin, (req, res) => {
+  const target = db.prepare('SELECT id, username, is_admin FROM users WHERE id = ?').get(req.params.userId);
+  if (!target) return res.status(404).json({ error: 'User not found' });
+  if (target.is_admin) return res.status(400).json({ error: 'Cannot revoke approval from an admin account.' });
+  db.prepare('UPDATE users SET is_approved = 0 WHERE id = ?').run(target.id);
+  res.json({ message: `${target.username}'s approval has been revoked.` });
 });
 
 // ── Background order processor ────────────────────────────────────────────────

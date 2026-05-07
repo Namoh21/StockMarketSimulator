@@ -29,6 +29,7 @@ db.exec(`
     email         TEXT    NOT NULL UNIQUE COLLATE NOCASE,
     password_hash TEXT    NOT NULL,
     is_admin      INTEGER NOT NULL DEFAULT 0,
+    is_approved   INTEGER NOT NULL DEFAULT 0,
     created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
   );
 
@@ -133,6 +134,7 @@ const migrations = [
   "ALTER TABLE game_config    ADD COLUMN is_active        INTEGER NOT NULL DEFAULT 1",
   "ALTER TABLE portfolios     ADD COLUMN joined_at        TEXT    NOT NULL DEFAULT (datetime('now'))",
   "ALTER TABLE pending_orders ADD COLUMN reserved_amount  REAL    NOT NULL DEFAULT 0",
+  "ALTER TABLE users          ADD COLUMN is_approved      INTEGER NOT NULL DEFAULT 0",
 ];
 for (const sql of migrations) { try { db.exec(sql); } catch {} }
 
@@ -142,5 +144,8 @@ try {
   const count = db.prepare("SELECT COUNT(*) as c FROM game_config WHERE is_active = 1").get().c;
   if (count === 0) db.prepare("UPDATE game_config SET is_active = 1").run();
 } catch {}
+
+// Migrate: approve all pre-existing users so nobody gets locked out on upgrade
+try { db.prepare("UPDATE users SET is_approved = 1 WHERE is_approved = 0").run(); } catch {}
 
 export default db;
