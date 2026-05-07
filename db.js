@@ -103,6 +103,26 @@ db.exec(`
     FOREIGN KEY (user_id) REFERENCES users(id),
     FOREIGN KEY (game_id) REFERENCES game_config(id)
   );
+
+  CREATE TABLE IF NOT EXISTS pending_orders (
+    id            INTEGER PRIMARY KEY,
+    user_id       INTEGER NOT NULL,
+    game_id       INTEGER NOT NULL,
+    symbol        TEXT    NOT NULL,
+    company_name  TEXT    NOT NULL DEFAULT '',
+    type          TEXT    NOT NULL CHECK(type IN ('buy','sell')),
+    order_type    TEXT    NOT NULL CHECK(order_type IN ('market','limit')),
+    shares        REAL    NOT NULL,
+    limit_price   REAL,
+    status        TEXT    NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','filled','cancelled','rejected')),
+    reject_reason TEXT,
+    submitted_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+    filled_at     TEXT,
+    filled_price  REAL,
+    filled_total  REAL,
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (game_id) REFERENCES game_config(id)
+  );
 `);
 
 // Safe migrations for existing databases — silently skip if column already exists

@@ -303,6 +303,16 @@
         </div>
         <div id="holdings-empty" class="empty"><div class="empty-icon">📊</div><div class="empty-text">No holdings yet — go trade!</div></div>
       </div>
+      <div class="card" id="pending-orders-card" style="display:none;margin-bottom:16px">
+        <div class="section-title" style="margin-bottom:12px">Pending Orders <span id="pending-count" class="tag">0</span></div>
+        <div class="table-wrap">
+          <table id="pending-orders-table" style="display:none">
+            <thead><tr><th>Submitted</th><th>Side</th><th>Symbol</th><th>Order Type</th><th class="text-right">Shares</th><th class="text-right">Limit Price</th><th>Status</th><th></th></tr></thead>
+            <tbody id="pending-orders-body"></tbody>
+          </table>
+        </div>
+        <div id="pending-orders-empty" class="empty" style="display:none"><div class="empty-icon">📋</div><div class="empty-text">No pending orders.</div></div>
+      </div>
       <div class="card" id="futures-positions-card" style="display:none">
         <div class="section-title" style="margin-bottom:12px">Futures Positions <span id="futures-count" class="tag">0</span></div>
         <div class="table-wrap">
@@ -343,11 +353,30 @@
         <div>
           <div id="trade-select-hint" class="card" style="text-align:center;padding:38px 18px;color:var(--muted)"><div style="font-size:30px;margin-bottom:8px">🔎</div>Search for a stock to trade.</div>
           <div id="trade-form-card" class="card" style="display:none">
+            <!-- Market status bar -->
+            <div id="market-status-bar" style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg3);border-radius:6px;margin-bottom:12px;font-size:12px">
+              <span id="market-status-dot" style="width:8px;height:8px;border-radius:50%;background:var(--muted);flex-shrink:0"></span>
+              <span id="market-status-text" class="muted">Checking market hours…</span>
+            </div>
             <div id="trade-status-notice" class="info-box" style="display:none"></div>
             <div id="current-holding"><span id="holding-info"></span></div>
             <div class="trade-tabs">
               <button class="trade-tab buy active" onclick="App.setTradeType('buy')">BUY</button>
               <button class="trade-tab sell" onclick="App.setTradeType('sell')">SELL</button>
+            </div>
+            <!-- Order type -->
+            <div class="form-group">
+              <label>Order Type</label>
+              <select id="order-type" onchange="App.onOrderTypeChange()">
+                <option value="market">Market Order — fill at current price</option>
+                <option value="limit">Limit Order — fill at a specific price</option>
+              </select>
+            </div>
+            <!-- Limit price (shown for limit orders) -->
+            <div class="form-group" id="limit-price-group" style="display:none">
+              <label>Limit Price ($)</label>
+              <input id="limit-price" type="number" min="0.01" step="0.01" placeholder="0.00" oninput="App.updateTradeTotal()">
+              <div class="shares-hint" id="limit-price-hint"></div>
             </div>
             <div class="form-group">
               <label>Shares</label>
@@ -355,7 +384,6 @@
                 <input id="trade-shares" type="number" min="0.001" step="any" placeholder="0" oninput="App.updateTradeTotal()">
                 <button class="btn btn-ghost btn-sm" onclick="App.setMaxShares()" id="max-btn">Max</button>
               </div>
-              <div class="shares-hint" id="trade-cost-hint"></div>
             </div>
             <div style="background:var(--bg3);border-radius:6px;padding:11px;margin-bottom:12px">
               <div style="display:flex;justify-content:space-between;margin-bottom:5px"><span class="muted">Estimated Total</span><span id="trade-total" style="font-weight:700">$0.00</span></div>
@@ -777,6 +805,40 @@ const App = (() => {
         </tr>`).join('');
       }
 
+      // Pending orders
+      try {
+        const orders = await api('GET', `/api/games/${currentGameId}/orders`);
+        const pending = orders.filter(o => o.status === 'pending');
+        const recent  = orders.filter(o => o.status !== 'pending').slice(0, 5);
+        const allShow = [...pending, ...recent];
+        const poCard  = document.getElementById('pending-orders-card');
+        poCard.style.display = allShow.length ? '' : 'none';
+        document.getElementById('pending-count').textContent = pending.length;
+        const poBody = document.getElementById('pending-orders-body');
+        const poTbl  = document.getElementById('pending-orders-table');
+        const poEmp  = document.getElementById('pending-orders-empty');
+        if (!allShow.length) { poTbl.style.display='none'; poEmp.style.display=''; }
+        else {
+          poTbl.style.display=''; poEmp.style.display='none';
+          poBody.innerHTML = allShow.map(o => {
+            const isPending = o.status === 'pending';
+            const statusColor = {pending:'gold',filled:'green',cancelled:'muted',rejected:'red'}[o.status]||'muted';
+            const limitCol = o.order_type === 'limit' ? fmt$(o.limit_price) : '<span class="muted">—</span>';
+            const fillInfo = o.filled_price ? `Filled @ ${fmt$(o.filled_price)}` : '';
+            return `<tr>
+              <td class="muted" style="font-size:12px">${fmtDate(o.submitted_at)}</td>
+              <td><span class="pill pill-${o.type}">${o.type.toUpperCase()}</span></td>
+              <td><strong>${o.symbol}</strong><br><span class="muted" style="font-size:11px">${o.company_name||''}</span></td>
+              <td>${o.order_type==='limit'?'Limit':'Market'}</td>
+              <td class="text-right">${fmtShares(o.shares)}</td>
+              <td class="text-right">${limitCol}</td>
+              <td><span class="${statusColor}">${o.status.toUpperCase()}</span>${fillInfo?`<br><span class="muted" style="font-size:11px">${fillInfo}</span>`:''}${o.reject_reason?`<br><span class="red" style="font-size:11px">${o.reject_reason}</span>`:''}</td>
+              <td>${isPending?`<button class="btn btn-ghost btn-sm" onclick="App.cancelOrder(${o.id})">Cancel</button>`:''}</td>
+            </tr>`;
+          }).join('');
+        }
+      } catch {}
+
       // Futures positions
       const fp = data.futures_positions || [];
       const fCard = document.getElementById('futures-positions-card');
@@ -809,10 +871,55 @@ const App = (() => {
   }
 
   // ── Trade ──────────────────────────────────────────────────────────────────
+  let marketOpen = false;
+
   async function loadTrade() {
     if (!currentGameId) return;
     try { currentGame = await api('GET',`/api/games/${currentGameId}`); updateBanner(); } catch {}
     updateTradeCash();
+    refreshMarketStatus();
+  }
+
+  async function refreshMarketStatus() {
+    try {
+      const ms = await api('GET', '/api/market/status');
+      marketOpen = ms.open;
+      const dot  = document.getElementById('market-status-dot');
+      const text = document.getElementById('market-status-text');
+      if (dot)  dot.style.background  = ms.open ? 'var(--green)' : 'var(--red)';
+      if (text) text.textContent = ms.open ? `🟢 Market OPEN — ${ms.detail}` : `🔴 Market CLOSED — ${ms.detail}`;
+      if (text) text.className = ms.open ? 'green' : 'red';
+      updateOrderTypeHint();
+    } catch {}
+  }
+
+  function onOrderTypeChange() {
+    const ot = document.getElementById('order-type')?.value;
+    const lpg = document.getElementById('limit-price-group');
+    if (!lpg) return;
+    lpg.style.display = ot === 'limit' ? '' : 'none';
+    updateOrderTypeHint();
+    updateTradeTotal();
+  }
+
+  function updateOrderTypeHint() {
+    const ot  = document.getElementById('order-type')?.value;
+    const bar = document.getElementById('market-status-text');
+    if (!bar) return;
+    if (ot === 'market' && !marketOpen) {
+      document.getElementById('trade-status-notice').textContent =
+        '⏰ Market is CLOSED — this market order will queue and execute automatically at market open (9:30 AM ET).';
+      document.getElementById('trade-status-notice').style.display = '';
+    } else if (ot === 'limit') {
+      const lph  = document.getElementById('limit-price-hint');
+      const lp   = parseFloat(document.getElementById('limit-price')?.value) || 0;
+      if (lph) lph.textContent = tradeType === 'buy'
+        ? `Buy when price drops to $${lp.toFixed(2)} or below`
+        : `Sell when price rises to $${lp.toFixed(2)} or above`;
+      document.getElementById('trade-status-notice').style.display = 'none';
+    } else {
+      document.getElementById('trade-status-notice').style.display = 'none';
+    }
   }
 
   function updateTradeCash() {
@@ -864,6 +971,7 @@ const App = (() => {
       document.getElementById('q-open').textContent=fmt$(q.open); document.getElementById('q-high').textContent=fmt$(q.high);
       document.getElementById('q-low').textContent=fmt$(q.low);   document.getElementById('q-vol').textContent=fmtVol(q.volume);
       loadChart(symbol);
+      refreshMarketStatus();
       // Holding badge
       const h=portfolio?.holdings?.find(x=>x.symbol===symbol); const hEl=document.getElementById('current-holding');
       if(h&&h.shares>0){hEl.style.display='';document.getElementById('holding-info').innerHTML=`You own <strong>${fmtShares(h.shares)}</strong> share(s) · avg <strong>${fmt$(h.avg_cost)}</strong>`;}else{hEl.style.display='none';}
@@ -906,33 +1014,65 @@ const App = (() => {
   }
 
   function updateTradeTotal() {
-    const s=parseFloat(document.getElementById('trade-shares').value)||0,p=currentQuote?.price||0;
-    document.getElementById('trade-total').textContent=fmt$(s*p); updateTradeCash();
+    const s   = parseFloat(document.getElementById('trade-shares').value) || 0;
+    const ot  = document.getElementById('order-type')?.value;
+    const lp  = parseFloat(document.getElementById('limit-price')?.value) || 0;
+    const p   = (ot === 'limit' && lp > 0) ? lp : (currentQuote?.price || 0);
+    document.getElementById('trade-total').textContent = fmt$(s * p);
+    updateTradeCash();
+    updateOrderTypeHint();
   }
 
   function setMaxShares() {
-    if(!currentQuote) return;
-    if(tradeType==='buy'){document.getElementById('trade-shares').value=Math.floor((portfolio?.cash_balance||0)/currentQuote.price*10000)/10000;}
-    else{const h=portfolio?.holdings?.find(x=>x.symbol===currentSymbol);document.getElementById('trade-shares').value=h?h.shares:0;}
+    if (!currentQuote) return;
+    const ot = document.getElementById('order-type')?.value;
+    const lp = parseFloat(document.getElementById('limit-price')?.value) || currentQuote.price;
+    const refPrice = (ot === 'limit' && lp > 0) ? lp : currentQuote.price;
+    if (tradeType === 'buy') {
+      document.getElementById('trade-shares').value = Math.floor((portfolio?.cash_balance || 0) / refPrice * 10000) / 10000;
+    } else {
+      const h = portfolio?.holdings?.find(x => x.symbol === currentSymbol);
+      document.getElementById('trade-shares').value = h ? h.shares : 0;
+    }
     updateTradeTotal();
   }
 
   async function executeTrade() {
-    const shares=parseFloat(document.getElementById('trade-shares').value),errEl=document.getElementById('trade-error');
-    errEl.textContent='';
-    if(!currentSymbol){errEl.textContent='No stock selected.';return;}
-    if(!shares||shares<=0){errEl.textContent='Enter a valid share quantity.';return;}
-    if(!currentGameId){errEl.textContent='No game selected.';return;}
-    const btn=document.getElementById('trade-submit-btn'); btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
+    const shares    = parseFloat(document.getElementById('trade-shares').value);
+    const orderType = document.getElementById('order-type')?.value || 'market';
+    const limitPrice = parseFloat(document.getElementById('limit-price')?.value) || null;
+    const errEl     = document.getElementById('trade-error');
+    errEl.textContent = '';
+
+    if (!currentSymbol)      { errEl.textContent = 'No stock selected.'; return; }
+    if (!shares || shares<=0){ errEl.textContent = 'Enter a valid share quantity.'; return; }
+    if (!currentGameId)      { errEl.textContent = 'No game selected.'; return; }
+    if (orderType === 'limit' && (!limitPrice || limitPrice <= 0)) {
+      errEl.textContent = 'Enter a valid limit price.'; return;
+    }
+
+    const btn = document.getElementById('trade-submit-btn');
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
     try {
-      const r=await api('POST',`/api/games/${currentGameId}/trades/${tradeType}`,{symbol:currentSymbol,shares});
-      toast(r.message,'success');
-      const pd=await api('GET',`/api/games/${currentGameId}/portfolio`); portfolio=pd; updateTradeCash();
-      const h=portfolio?.holdings?.find(x=>x.symbol===currentSymbol),hEl=document.getElementById('current-holding');
-      if(h&&h.shares>0){hEl.style.display='';document.getElementById('holding-info').innerHTML=`You own <strong>${fmtShares(h.shares)}</strong> share(s) · avg <strong>${fmt$(h.avg_cost)}</strong>`;}else{hEl.style.display='none';}
-      document.getElementById('trade-shares').value=''; updateTradeTotal();
-    } catch(err){errEl.textContent=err.message;}
-    finally{btn.disabled=false;setTradeType(tradeType);}
+      const body = { symbol: currentSymbol, type: tradeType, order_type: orderType, shares };
+      if (orderType === 'limit') body.limit_price = limitPrice;
+
+      const r = await api('POST', `/api/games/${currentGameId}/orders`, body);
+      toast(r.message, r.filled ? 'success' : 'info');
+
+      const pd = await api('GET', `/api/games/${currentGameId}/portfolio`);
+      portfolio = pd; updateTradeCash();
+      const h = portfolio?.holdings?.find(x => x.symbol === currentSymbol);
+      const hEl = document.getElementById('current-holding');
+      if (h && h.shares > 0) {
+        hEl.style.display = '';
+        document.getElementById('holding-info').innerHTML = `You own <strong>${fmtShares(h.shares)}</strong> share(s) · avg <strong>${fmt$(h.avg_cost)}</strong>`;
+      } else { hEl.style.display = 'none'; }
+      document.getElementById('trade-shares').value = '';
+      if (orderType === 'limit') document.getElementById('limit-price').value = '';
+      updateTradeTotal();
+    } catch(err) { errEl.textContent = err.message; }
+    finally { btn.disabled = false; setTradeType(tradeType); }
   }
 
   // ── Futures ────────────────────────────────────────────────────────────────
@@ -1177,6 +1317,15 @@ const App = (() => {
     } catch(err){errEl.textContent=err.message;}
   }
 
+  // ── Cancel pending order ───────────────────────────────────────────────────
+  async function cancelOrder(orderId) {
+    try {
+      const r = await api('DELETE', `/api/games/${currentGameId}/orders/${orderId}`);
+      toast(r.message, 'info');
+      await loadPortfolio();
+    } catch(err) { toast(err.message, 'error'); }
+  }
+
   // ── Sell stock modal ───────────────────────────────────────────────────────
   function openSellModal(symbol,shares,price,companyName){
     smSymbol=symbol;smMaxShares=parseFloat(shares);smPrice=parseFloat(price);
@@ -1288,7 +1437,7 @@ const App = (() => {
     navigate, login, register, logout, switchAuthTab,
     joinAndEnter, exitGame, loadQuoteForSymbol,
     onSearchInput, onSearchFocus, selectStock,
-    setTradeType, executeTrade, setMaxShares, updateTradeTotal,
+    setTradeType, executeTrade, setMaxShares, updateTradeTotal, onOrderTypeChange, cancelOrder,
     filterFutures, selectFutures, setFuturesDir, updateFuturesTotal, setMaxFuturesContracts, openFuturesPosition,
     openSellModal, closeSellModal, updateSellModalTotal, setSellModalMax, executeSellModal,
     openCloseFuturesModal, closeCloseFuturesModal, updateCfmTotal, setCfmMax, executeClosePosition,

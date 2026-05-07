@@ -102,6 +102,39 @@ const FUTURES_CONTRACTS = [
   { symbol: 'BTC=F', name: 'Bitcoin Futures',      category: 'Crypto',   description: 'CME Bitcoin futures contract' },
 ];
 
+// ── US Market hours (America/New_York) ───────────────────────────────────────
+function getEasternParts() {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    weekday: 'short', hour: 'numeric', minute: 'numeric', hour12: false,
+  }).formatToParts(new Date());
+  return {
+    weekday: parts.find(p => p.type === 'weekday')?.value,
+    hour:    parseInt(parts.find(p => p.type === 'hour')?.value   ?? '0'),
+    minute:  parseInt(parts.find(p => p.type === 'minute')?.value ?? '0'),
+  };
+}
+
+function isMarketOpen() {
+  const { weekday, hour, minute } = getEasternParts();
+  if (weekday === 'Sat' || weekday === 'Sun') return false;
+  const t = hour * 60 + minute;
+  return t >= 570 && t < 960; // 9:30 AM – 4:00 PM ET
+}
+
+function marketStatus() {
+  const { weekday, hour, minute } = getEasternParts();
+  const isWeekend = weekday === 'Sat' || weekday === 'Sun';
+  const t   = hour * 60 + minute;
+  const open = !isWeekend && t >= 570 && t < 960;
+  let detail;
+  if (open)          detail = 'Closes 4:00 PM ET today';
+  else if (isWeekend) detail = 'Opens Monday 9:30 AM ET';
+  else if (t < 570) { const m = 570 - t; detail = `Opens in ${Math.floor(m/60)}h ${m%60}m (9:30 AM ET)`; }
+  else               detail = 'Opens tomorrow 9:30 AM ET';
+  return { open, detail };
+}
+
 // ── Exchange allow-list ───────────────────────────────────────────────────────
 const MARKET_EXCHANGES = {
   NYSE:   ['NYQ', 'NYS', 'NYSEArca', 'NYSEAmex'],
@@ -407,17 +440,55 @@ app.get('/api/stocks/chart/:symbol', async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// TRADES (per game)
+// TRADES & ORDERS (per game)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-app.post('/api/games/:gameId/trades/buy', requireAuth, loadGame, async (req, res) => {
+// ── Core fill logic (shared by immediate trades and background processor) ─────
+function applyFill(userId, gameId, symbol, companyName, type, shares, price) {
+  const total = +(price * shares).toFixed(6);
+  db.transaction(() => {
+    if (type === 'buy') {
+      db.prepare('UPDATE portfolios SET cash_balance = cash_balance - ? WHERE user_id = ? AND game_id = ?').run(total, userId, gameId);
+      const ex = db.prepare('SELECT * FROM holdings WHERE user_id = ? AND game_id = ? AND symbol = ?').get(userId, gameId, symbol);
+      if (ex) {
+        const ns = ex.shares + shares;
+        db.prepare('UPDATE holdings SET shares=?, avg_cost=?, company_name=? WHERE id=?')
+          .run(ns, (ex.avg_cost * ex.shares + price * shares) / ns, companyName, ex.id);
+      } else {
+        db.prepare('INSERT INTO holdings (user_id,game_id,symbol,company_name,shares,avg_cost) VALUES (?,?,?,?,?,?)').run(userId, gameId, symbol, companyName, shares, price);
+      }
+    } else {
+      db.prepare('UPDATE portfolios SET cash_balance = cash_balance + ? WHERE user_id = ? AND game_id = ?').run(total, userId, gameId);
+      const h = db.prepare('SELECT * FROM holdings WHERE user_id = ? AND game_id = ? AND symbol = ?').get(userId, gameId, symbol);
+      if (h) {
+        const rem = h.shares - shares;
+        db.prepare('UPDATE holdings SET shares=? WHERE id=?').run(rem < 0.000001 ? 0 : rem, h.id);
+      }
+    }
+    db.prepare('INSERT INTO transactions (user_id,game_id,symbol,company_name,type,shares,price,total) VALUES (?,?,?,?,?,?,?,?)')
+      .run(userId, gameId, symbol, companyName, type, shares, price, total);
+  })();
+  return total;
+}
+
+// ── Market status ──────────────────────────────────────────────────────────────
+app.get('/api/market/status', (req, res) => res.json(marketStatus()));
+
+// ── Unified order submission ───────────────────────────────────────────────────
+// order_type: 'market' | 'limit'   type: 'buy' | 'sell'
+app.post('/api/games/:gameId/orders', requireAuth, loadGame, async (req, res) => {
   const game = req.game;
-  let { symbol, shares } = req.body || {};
-  symbol = symbol?.toUpperCase(); shares = parseFloat(shares);
-  if (!symbol || isNaN(shares) || shares <= 0) return res.status(400).json({ error: 'symbol and positive shares are required' });
+  let { symbol, type, order_type, shares, limit_price } = req.body || {};
+  symbol = symbol?.toUpperCase(); shares = parseFloat(shares); limit_price = limit_price ? parseFloat(limit_price) : null;
+
+  if (!symbol || !type || !order_type || isNaN(shares) || shares <= 0)
+    return res.status(400).json({ error: 'symbol, type, order_type, and shares are required' });
+  if (!['buy','sell'].includes(type))        return res.status(400).json({ error: 'type must be buy or sell' });
+  if (!['market','limit'].includes(order_type)) return res.status(400).json({ error: 'order_type must be market or limit' });
   if (game.status === 'pending') return res.status(400).json({ error: 'Game has not started yet' });
   if (game.status === 'ended')   return res.status(400).json({ error: 'Game has ended — no more trades' });
   if (!game.allow_fractional && !Number.isInteger(shares)) return res.status(400).json({ error: 'Fractional shares are not allowed in this game' });
+  if (order_type === 'limit' && (limit_price == null || limit_price <= 0)) return res.status(400).json({ error: 'A positive limit price is required for limit orders' });
 
   let quote;
   try { quote = await getQuote(symbol); } catch (err) { return res.status(400).json({ error: err.message }); }
@@ -425,28 +496,89 @@ app.post('/api/games/:gameId/trades/buy', requireAuth, loadGame, async (req, res
   if (!isExchangeAllowed(quote.exchange, game.markets))
     return res.status(400).json({ error: `${symbol} (${quote.exchange}) is not in the allowed markets: ${game.markets.join(', ')}` });
 
-  const total     = +(quote.price * shares).toFixed(6);
-  const portfolio = ensurePortfolio(req.user.id, game.id, game.starting_cash);
-  if (total > portfolio.cash_balance)
-    return res.status(400).json({ error: `Insufficient funds — cost $${total.toFixed(2)}, available $${portfolio.cash_balance.toFixed(2)}` });
+  // For sell orders: verify the user actually owns the shares now
+  if (type === 'sell') {
+    const holding = db.prepare('SELECT * FROM holdings WHERE user_id = ? AND game_id = ? AND symbol = ?').get(req.user.id, game.id, symbol);
+    if (!holding || holding.shares < shares - 0.000001)
+      return res.status(400).json({ error: `Insufficient shares — you own ${holding ? holding.shares.toFixed(4) : 0} share(s) of ${symbol}` });
+  }
 
-  db.transaction(() => {
-    db.prepare('UPDATE portfolios SET cash_balance = cash_balance - ? WHERE user_id = ? AND game_id = ?').run(total, req.user.id, game.id);
-    const existing = db.prepare('SELECT * FROM holdings WHERE user_id = ? AND game_id = ? AND symbol = ?').get(req.user.id, game.id, symbol);
-    if (existing) {
-      const ns = existing.shares + shares;
-      db.prepare('UPDATE holdings SET shares = ?, avg_cost = ?, company_name = ? WHERE id = ?')
-        .run(ns, (existing.avg_cost * existing.shares + quote.price * shares) / ns, quote.name, existing.id);
-    } else {
-      db.prepare('INSERT INTO holdings (user_id, game_id, symbol, company_name, shares, avg_cost) VALUES (?, ?, ?, ?, ?, ?)')
-        .run(req.user.id, game.id, symbol, quote.name, shares, quote.price);
+  const open = isMarketOpen();
+
+  // Market order + market open → fill immediately
+  if (order_type === 'market' && open) {
+    if (type === 'buy') {
+      const portfolio = ensurePortfolio(req.user.id, game.id, game.starting_cash);
+      const cost = +(quote.price * shares).toFixed(6);
+      if (cost > portfolio.cash_balance)
+        return res.status(400).json({ error: `Insufficient funds — cost $${cost.toFixed(2)}, available $${portfolio.cash_balance.toFixed(2)}` });
     }
-    db.prepare('INSERT INTO transactions (user_id, game_id, symbol, company_name, type, shares, price, total) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(req.user.id, game.id, symbol, quote.name, 'buy', shares, quote.price, total);
-  })();
+    applyFill(req.user.id, game.id, symbol, quote.name, type, shares, quote.price);
+    const updated = db.prepare('SELECT * FROM portfolios WHERE user_id = ? AND game_id = ?').get(req.user.id, game.id);
+    return res.json({ filled: true, filled_price: quote.price, cash_balance: updated.cash_balance,
+      message: `${type === 'buy' ? 'Bought' : 'Sold'} ${shares} share(s) of ${symbol} at $${quote.price.toFixed(2)}` });
+  }
 
+  // Market order + market closed → check estimated cash then queue
+  if (order_type === 'market' && type === 'buy') {
+    const portfolio = ensurePortfolio(req.user.id, game.id, game.starting_cash);
+    if (quote.price * shares > portfolio.cash_balance)
+      return res.status(400).json({ error: `Estimated cost $${(quote.price * shares).toFixed(2)} exceeds available cash $${portfolio.cash_balance.toFixed(2)}` });
+  }
+
+  // Queue the order (market-closed or limit)
+  const { lastInsertRowid } = db.prepare(
+    'INSERT INTO pending_orders (user_id,game_id,symbol,company_name,type,order_type,shares,limit_price) VALUES (?,?,?,?,?,?,?,?)'
+  ).run(req.user.id, game.id, symbol, quote.name, type, order_type, shares, limit_price);
+
+  const msg = order_type === 'market'
+    ? `Market ${type} order queued — will execute at market open (9:30 AM ET)`
+    : `Limit ${type} order placed — will fill when price ${type === 'buy' ? 'drops to' : 'rises to'} $${limit_price.toFixed(2)} or ${type === 'buy' ? 'below' : 'above'}`;
+
+  res.json({ filled: false, pending: true, order_id: lastInsertRowid, message: msg });
+});
+
+// User's pending + recent orders for a game
+app.get('/api/games/:gameId/orders', requireAuth, loadGame, (req, res) => {
+  res.json(db.prepare(
+    'SELECT * FROM pending_orders WHERE user_id = ? AND game_id = ? ORDER BY submitted_at DESC LIMIT 100'
+  ).all(req.user.id, req.game.id));
+});
+
+// Cancel a pending order
+app.delete('/api/games/:gameId/orders/:orderId', requireAuth, loadGame, (req, res) => {
+  const order = db.prepare('SELECT * FROM pending_orders WHERE id = ? AND user_id = ? AND game_id = ?')
+    .get(req.params.orderId, req.user.id, req.game.id);
+  if (!order) return res.status(404).json({ error: 'Order not found' });
+  if (order.status !== 'pending') return res.status(400).json({ error: `Cannot cancel — order is already ${order.status}` });
+  db.prepare("UPDATE pending_orders SET status='cancelled', filled_at=datetime('now') WHERE id=?").run(order.id);
+  res.json({ message: `Cancelled: ${order.type} ${order.shares} share(s) of ${order.symbol}` });
+});
+
+// Legacy buy/sell routes → delegate to the unified order endpoint handler
+app.post('/api/games/:gameId/trades/buy', requireAuth, loadGame, async (req, res) => {
+  req.body = { ...req.body, type: 'buy', order_type: 'market' };
+  // Re-use the /orders handler logic by internally redirecting
+  const fakeReq = { ...req, params: req.params };
+  // Just call through directly — keeps code DRY
+  const game = req.game;
+  let { symbol, shares } = req.body;
+  symbol = symbol?.toUpperCase(); shares = parseFloat(shares);
+  if (!symbol || isNaN(shares) || shares <= 0) return res.status(400).json({ error: 'symbol and positive shares are required' });
+  if (game.status !== 'active') return res.status(400).json({ error: game.status === 'pending' ? 'Game has not started yet' : 'Game has ended' });
+  let quote; try { quote = await getQuote(symbol); } catch (err) { return res.status(400).json({ error: err.message }); }
+  if (!isExchangeAllowed(quote.exchange, game.markets)) return res.status(400).json({ error: `${symbol} not in allowed markets` });
+  const portfolio = ensurePortfolio(req.user.id, game.id, game.starting_cash);
+  const cost = +(quote.price * shares).toFixed(6);
+  if (cost > portfolio.cash_balance) return res.status(400).json({ error: `Insufficient funds — cost $${cost.toFixed(2)}, available $${portfolio.cash_balance.toFixed(2)}` });
+  if (!isMarketOpen()) {
+    const { lastInsertRowid } = db.prepare('INSERT INTO pending_orders (user_id,game_id,symbol,company_name,type,order_type,shares) VALUES (?,?,?,?,?,?,?)')
+      .run(req.user.id, game.id, symbol, quote.name, 'buy', 'market', shares);
+    return res.json({ filled: false, pending: true, order_id: lastInsertRowid, message: `Market closed — buy order queued for market open (9:30 AM ET)` });
+  }
+  applyFill(req.user.id, game.id, symbol, quote.name, 'buy', shares, quote.price);
   const updated = db.prepare('SELECT * FROM portfolios WHERE user_id = ? AND game_id = ?').get(req.user.id, game.id);
-  res.json({ message: `Bought ${shares} share(s) of ${symbol} at $${quote.price.toFixed(2)}`, cash_balance: updated.cash_balance, total_cost: total });
+  res.json({ filled: true, message: `Bought ${shares} share(s) of ${symbol} at $${quote.price.toFixed(2)}`, cash_balance: updated.cash_balance, total_cost: cost });
 });
 
 app.post('/api/games/:gameId/trades/sell', requireAuth, loadGame, async (req, res) => {
@@ -454,27 +586,18 @@ app.post('/api/games/:gameId/trades/sell', requireAuth, loadGame, async (req, re
   let { symbol, shares } = req.body || {};
   symbol = symbol?.toUpperCase(); shares = parseFloat(shares);
   if (!symbol || isNaN(shares) || shares <= 0) return res.status(400).json({ error: 'symbol and positive shares are required' });
-  if (game.status === 'pending') return res.status(400).json({ error: 'Game has not started yet' });
-  if (game.status === 'ended')   return res.status(400).json({ error: 'Game has ended — no more trades' });
-
+  if (game.status !== 'active') return res.status(400).json({ error: game.status === 'pending' ? 'Game has not started yet' : 'Game has ended' });
   const holding = db.prepare('SELECT * FROM holdings WHERE user_id = ? AND game_id = ? AND symbol = ?').get(req.user.id, game.id, symbol);
-  if (!holding || holding.shares < shares - 0.000001)
-    return res.status(400).json({ error: `Insufficient shares — you own ${holding ? holding.shares.toFixed(6) : 0} share(s) of ${symbol}` });
-
-  let quote;
-  try { quote = await getQuote(symbol); } catch (err) { return res.status(400).json({ error: err.message }); }
-
-  const total = +(quote.price * shares).toFixed(6);
-  db.transaction(() => {
-    db.prepare('UPDATE portfolios SET cash_balance = cash_balance + ? WHERE user_id = ? AND game_id = ?').run(total, req.user.id, game.id);
-    const rem = holding.shares - shares;
-    db.prepare('UPDATE holdings SET shares = ? WHERE id = ?').run(rem < 0.000001 ? 0 : rem, holding.id);
-    db.prepare('INSERT INTO transactions (user_id, game_id, symbol, company_name, type, shares, price, total) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(req.user.id, game.id, symbol, quote.name, 'sell', shares, quote.price, total);
-  })();
-
+  if (!holding || holding.shares < shares - 0.000001) return res.status(400).json({ error: `Insufficient shares — you own ${holding ? holding.shares.toFixed(4) : 0} share(s) of ${symbol}` });
+  let quote; try { quote = await getQuote(symbol); } catch (err) { return res.status(400).json({ error: err.message }); }
+  if (!isMarketOpen()) {
+    const { lastInsertRowid } = db.prepare('INSERT INTO pending_orders (user_id,game_id,symbol,company_name,type,order_type,shares) VALUES (?,?,?,?,?,?,?)')
+      .run(req.user.id, game.id, symbol, quote.name, 'sell', 'market', shares);
+    return res.json({ filled: false, pending: true, order_id: lastInsertRowid, message: `Market closed — sell order queued for market open (9:30 AM ET)` });
+  }
+  applyFill(req.user.id, game.id, symbol, quote.name, 'sell', shares, quote.price);
   const updated = db.prepare('SELECT * FROM portfolios WHERE user_id = ? AND game_id = ?').get(req.user.id, game.id);
-  res.json({ message: `Sold ${shares} share(s) of ${symbol} at $${quote.price.toFixed(2)}`, cash_balance: updated.cash_balance, total_proceeds: total });
+  res.json({ filled: true, message: `Sold ${shares} share(s) of ${symbol} at $${quote.price.toFixed(2)}`, cash_balance: updated.cash_balance });
 });
 
 app.get('/api/games/:gameId/trades/history', requireAuth, loadGame, (req, res) => {
@@ -622,6 +745,67 @@ app.delete('/api/games/:gameId', requireAdmin, loadGame, (req, res) => {
 app.get('/api/admin/players', requireAdmin, (req, res) => {
   res.json(db.prepare('SELECT id, username, email, is_admin, created_at FROM users ORDER BY created_at').all());
 });
+
+// ── Background order processor ────────────────────────────────────────────────
+async function fillOrder(order) {
+  const game = db.prepare('SELECT * FROM game_config WHERE id = ?').get(order.game_id);
+  if (!game || gameStatus(game) !== 'active') {
+    db.prepare("UPDATE pending_orders SET status='rejected', reject_reason='Game is no longer active', filled_at=datetime('now') WHERE id=?").run(order.id);
+    return;
+  }
+  let price;
+  try { price = (await getQuote(order.symbol)).price; }
+  catch (err) { return; } // price unavailable — try next cycle
+
+  const total = +(price * order.shares).toFixed(6);
+
+  if (order.type === 'buy') {
+    const portfolio = db.prepare('SELECT * FROM portfolios WHERE user_id = ? AND game_id = ?').get(order.user_id, order.game_id);
+    if (!portfolio || portfolio.cash_balance < total) {
+      db.prepare("UPDATE pending_orders SET status='rejected', reject_reason=?, filled_at=datetime('now'), filled_price=? WHERE id=?")
+        .run(`Insufficient funds at fill time ($${total.toFixed(2)} needed, $${portfolio?.cash_balance?.toFixed(2) || '0'} available)`, price, order.id);
+      return;
+    }
+  } else {
+    const holding = db.prepare('SELECT * FROM holdings WHERE user_id = ? AND game_id = ? AND symbol = ?').get(order.user_id, order.game_id, order.symbol);
+    if (!holding || holding.shares < order.shares - 0.000001) {
+      db.prepare("UPDATE pending_orders SET status='rejected', reject_reason=?, filled_at=datetime('now'), filled_price=? WHERE id=?")
+        .run(`Insufficient shares at fill time (owned ${holding?.shares?.toFixed(4) || 0}, needed ${order.shares})`, price, order.id);
+      return;
+    }
+  }
+
+  applyFill(order.user_id, order.game_id, order.symbol, order.company_name, order.type, order.shares, price);
+  db.prepare("UPDATE pending_orders SET status='filled', filled_at=datetime('now'), filled_price=?, filled_total=? WHERE id=?")
+    .run(price, total, order.id);
+  console.log(`[Orders] Filled ${order.type} #${order.id}: ${order.shares} ${order.symbol} @ $${price.toFixed(2)}`);
+}
+
+async function processAllPendingOrders() {
+  const pending = db.prepare("SELECT * FROM pending_orders WHERE status='pending' ORDER BY submitted_at").all();
+  if (!pending.length) return;
+  const open = isMarketOpen();
+  for (const order of pending) {
+    try {
+      if (order.order_type === 'market') {
+        if (open) await fillOrder(order);
+      } else {
+        // Limit orders: check price condition (triggers at any hour for game realism)
+        let price;
+        try { price = (await getQuote(order.symbol)).price; } catch { continue; }
+        const triggered = order.type === 'buy'  ? price <= order.limit_price
+                        : order.type === 'sell' ? price >= order.limit_price : false;
+        if (triggered) await fillOrder(order);
+      }
+    } catch (err) {
+      console.error(`[Orders] Error on order ${order.id}:`, err.message);
+    }
+  }
+}
+
+// Run immediately at startup then every 60 s
+processAllPendingOrders();
+setInterval(processAllPendingOrders, 60_000);
 
 // ── Catch-all → SPA ──────────────────────────────────────────────────────────
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
