@@ -6,457 +6,345 @@
   <title>StockArena</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
     :root {
-      --bg:        #0f172a;
-      --bg2:       #1e293b;
-      --bg3:       #273549;
-      --border:    #334155;
-      --text:      #e2e8f0;
-      --muted:     #94a3b8;
-      --green:     #22c55e;
-      --green-dim: #166534;
-      --red:       #ef4444;
-      --red-dim:   #7f1d1d;
-      --blue:      #3b82f6;
-      --gold:      #f59e0b;
-      --radius:    8px;
+      --bg:#0f172a; --bg2:#1e293b; --bg3:#273549; --border:#334155;
+      --text:#e2e8f0; --muted:#94a3b8;
+      --green:#22c55e; --green-dim:#166534;
+      --red:#ef4444;   --red-dim:#7f1d1d;
+      --blue:#3b82f6;  --gold:#f59e0b; --purple:#a855f7;
+      --radius:8px;
     }
+    body { background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,sans-serif; font-size:14px; min-height:100vh; }
+    ::-webkit-scrollbar { width:6px; height:6px; } ::-webkit-scrollbar-track { background:var(--bg2); } ::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
 
-    body { background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, sans-serif; font-size: 14px; min-height: 100vh; }
+    /* ── Layout ── */
+    #app-shell { display:none; flex-direction:column; min-height:100vh; }
+    #auth-shell { display:flex; align-items:center; justify-content:center; min-height:100vh; padding:20px; }
 
-    /* ── Scrollbar ─────────────────────────────────────────────────────── */
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: var(--bg2); }
-    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    /* ── Navbar ── */
+    nav { background:var(--bg2); border-bottom:1px solid var(--border); display:flex; align-items:center; padding:0 16px; height:54px; gap:4px; position:sticky; top:0; z-index:100; }
+    .nav-brand { font-size:17px; font-weight:800; color:var(--gold); margin-right:10px; white-space:nowrap; }
+    .nav-brand span { color:var(--text); }
+    .nav-divider { width:1px; height:24px; background:var(--border); margin:0 6px; }
+    .nav-game-name { color:var(--blue); font-size:13px; font-weight:600; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .nav-links { display:flex; gap:2px; flex:1; }
+    .nav-btn { background:none; border:none; color:var(--muted); cursor:pointer; padding:5px 10px; border-radius:var(--radius); font-size:13px; font-weight:500; transition:background .15s,color .15s; white-space:nowrap; }
+    .nav-btn:hover { background:var(--bg3); color:var(--text); }
+    .nav-btn.active { background:var(--bg3); color:var(--text); }
+    .nav-btn.back { color:var(--blue); }
+    .nav-user { margin-left:auto; display:flex; align-items:center; gap:8px; }
+    .nav-username { color:var(--muted); font-size:12px; }
+    .badge { display:inline-block; padding:2px 7px; border-radius:10px; font-size:10px; font-weight:700; }
+    .badge-admin { background:var(--gold); color:#000; }
+    .badge-status { font-size:10px; font-weight:700; padding:2px 7px; border-radius:10px; }
+    .badge-active  { background:var(--green-dim); color:var(--green); }
+    .badge-pending { background:#1e3a5f; color:#93c5fd; }
+    .badge-ended   { background:var(--red-dim); color:var(--red); }
 
-    /* ── Layout ────────────────────────────────────────────────────────── */
-    #app-shell { display: none; flex-direction: column; min-height: 100vh; }
-    #auth-shell { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
+    /* ── Banner ── */
+    #game-banner { text-align:center; padding:7px 20px; font-size:13px; font-weight:500; display:none; }
+    #game-banner.pending { background:#1e3a5f; color:#93c5fd; display:block; }
+    #game-banner.active  { background:#14532d; color:#86efac; display:block; }
+    #game-banner.ended   { background:#450a0a; color:#fca5a5; display:block; }
 
-    /* ── Navbar ────────────────────────────────────────────────────────── */
-    nav {
-      background: var(--bg2);
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      padding: 0 20px;
-      height: 56px;
-      gap: 4px;
-      position: sticky;
-      top: 0;
-      z-index: 100;
-    }
-    .nav-brand { font-size: 18px; font-weight: 700; color: var(--gold); margin-right: 16px; white-space: nowrap; }
-    .nav-brand span { color: var(--text); }
-    .nav-links { display: flex; gap: 2px; flex: 1; }
-    .nav-btn {
-      background: none;
-      border: none;
-      color: var(--muted);
-      cursor: pointer;
-      padding: 6px 12px;
-      border-radius: var(--radius);
-      font-size: 13px;
-      font-weight: 500;
-      transition: background .15s, color .15s;
-      white-space: nowrap;
-    }
-    .nav-btn:hover { background: var(--bg3); color: var(--text); }
-    .nav-btn.active { background: var(--bg3); color: var(--text); }
-    .nav-user { margin-left: auto; display: flex; align-items: center; gap: 10px; }
-    .nav-username { color: var(--muted); font-size: 13px; }
-    .badge-admin { background: var(--gold); color: #000; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 10px; }
+    /* ── Main ── */
+    main { flex:1; padding:22px 18px; max-width:1140px; margin:0 auto; width:100%; }
+    .view { display:none; } .view.active { display:block; }
 
-    /* ── Banner ────────────────────────────────────────────────────────── */
-    #game-banner {
-      text-align: center;
-      padding: 8px 20px;
-      font-size: 13px;
-      font-weight: 500;
-      display: none;
-    }
-    #game-banner.pending { background: #1e3a5f; color: #93c5fd; display: block; }
-    #game-banner.active  { background: #14532d; color: #86efac; display: block; }
-    #game-banner.ended   { background: #450a0a; color: #fca5a5; display: block; }
+    /* ── Auth ── */
+    .auth-card { background:var(--bg2); border:1px solid var(--border); border-radius:12px; padding:34px 30px; width:100%; max-width:400px; }
+    .auth-logo { text-align:center; margin-bottom:22px; }
+    .auth-logo h1 { font-size:26px; font-weight:800; color:var(--gold); }
+    .auth-logo p  { color:var(--muted); font-size:13px; margin-top:4px; }
+    .auth-tabs { display:flex; margin-bottom:22px; border-radius:var(--radius); overflow:hidden; border:1px solid var(--border); }
+    .auth-tab { flex:1; background:none; border:none; color:var(--muted); cursor:pointer; padding:9px; font-size:13px; font-weight:600; transition:background .15s,color .15s; }
+    .auth-tab.active { background:var(--blue); color:#fff; }
 
-    /* ── Main content ──────────────────────────────────────────────────── */
-    main { flex: 1; padding: 24px 20px; max-width: 1100px; margin: 0 auto; width: 100%; }
+    /* ── Forms ── */
+    .form-group { margin-bottom:13px; }
+    .form-group label { display:block; font-size:11px; color:var(--muted); margin-bottom:5px; font-weight:600; text-transform:uppercase; letter-spacing:.5px; }
+    .form-group input, .form-group select { width:100%; background:var(--bg3); border:1px solid var(--border); border-radius:var(--radius); color:var(--text); padding:8px 11px; font-size:14px; outline:none; transition:border-color .15s; }
+    .form-group input:focus, .form-group select:focus { border-color:var(--blue); }
+    .form-group select option { background:var(--bg2); }
 
-    /* ── Views ─────────────────────────────────────────────────────────── */
-    .view { display: none; }
-    .view.active { display: block; }
+    /* ── Buttons ── */
+    .btn { display:inline-flex; align-items:center; justify-content:center; gap:6px; border:none; border-radius:var(--radius); cursor:pointer; font-size:13px; font-weight:600; padding:8px 16px; transition:opacity .15s,transform .1s; }
+    .btn:active { transform:scale(0.97); } .btn:disabled { opacity:.4; cursor:not-allowed; }
+    .btn-primary { background:var(--blue);   color:#fff; }
+    .btn-green   { background:var(--green);  color:#000; }
+    .btn-red     { background:var(--red);    color:#fff; }
+    .btn-ghost   { background:var(--bg3);    color:var(--text); border:1px solid var(--border); }
+    .btn-purple  { background:var(--purple); color:#fff; }
+    .btn-full    { width:100%; }
+    .btn-sm      { padding:4px 10px; font-size:12px; }
 
-    /* ── Auth card ──────────────────────────────────────────────────────── */
-    .auth-card {
-      background: var(--bg2);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 36px 32px;
-      width: 100%;
-      max-width: 400px;
-    }
-    .auth-logo { text-align: center; margin-bottom: 24px; }
-    .auth-logo h1 { font-size: 28px; font-weight: 800; color: var(--gold); }
-    .auth-logo p  { color: var(--muted); font-size: 13px; margin-top: 4px; }
-    .auth-tabs { display: flex; gap: 0; margin-bottom: 24px; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border); }
-    .auth-tab { flex: 1; background: none; border: none; color: var(--muted); cursor: pointer; padding: 10px; font-size: 14px; font-weight: 500; transition: background .15s, color .15s; }
-    .auth-tab.active { background: var(--blue); color: #fff; }
+    /* ── Cards ── */
+    .card { background:var(--bg2); border:1px solid var(--border); border-radius:10px; padding:18px; }
+    .card-title { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.6px; font-weight:600; margin-bottom:5px; }
+    .card-value { font-size:26px; font-weight:700; }
+    .card-sub   { font-size:11px; color:var(--muted); margin-top:2px; }
 
-    /* ── Forms ──────────────────────────────────────────────────────────── */
-    .form-group { margin-bottom: 14px; }
-    .form-group label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; font-weight: 500; text-transform: uppercase; letter-spacing: .5px; }
-    .form-group input, .form-group select {
-      width: 100%;
-      background: var(--bg3);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      color: var(--text);
-      padding: 9px 12px;
-      font-size: 14px;
-      outline: none;
-      transition: border-color .15s;
-    }
-    .form-group input:focus, .form-group select:focus { border-color: var(--blue); }
-    .form-group select option { background: var(--bg2); }
+    /* ── Grids ── */
+    .stats-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:22px; }
+    .games-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:16px; }
 
-    /* ── Buttons ────────────────────────────────────────────────────────── */
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      border: none;
-      border-radius: var(--radius);
-      cursor: pointer;
-      font-size: 14px;
-      font-weight: 600;
-      padding: 9px 18px;
-      transition: opacity .15s, transform .1s;
-    }
-    .btn:active { transform: scale(0.97); }
-    .btn:disabled { opacity: .45; cursor: not-allowed; }
-    .btn-primary { background: var(--blue); color: #fff; }
-    .btn-green  { background: var(--green); color: #000; }
-    .btn-red    { background: var(--red); color: #fff; }
-    .btn-ghost  { background: var(--bg3); color: var(--text); border: 1px solid var(--border); }
-    .btn-full   { width: 100%; }
-    .btn-sm     { padding: 5px 12px; font-size: 12px; }
+    /* ── Tables ── */
+    .table-wrap { overflow-x:auto; }
+    table { width:100%; border-collapse:collapse; }
+    th { color:var(--muted); font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.5px; text-align:left; padding:8px 10px; border-bottom:1px solid var(--border); white-space:nowrap; }
+    td { padding:9px 10px; border-bottom:1px solid var(--border); vertical-align:middle; }
+    tr:last-child td { border-bottom:none; }
+    tr:hover td { background:var(--bg3); }
+    .text-right { text-align:right; }
 
-    /* ── Cards ──────────────────────────────────────────────────────────── */
-    .card {
-      background: var(--bg2);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 20px;
-    }
-    .card-title { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; font-weight: 600; margin-bottom: 6px; }
-    .card-value { font-size: 28px; font-weight: 700; }
-    .card-sub   { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    /* ── Color helpers ── */
+    .green{color:var(--green);} .red{color:var(--red);} .muted{color:var(--muted);} .gold{color:var(--gold);} .blue{color:var(--blue);} .purple{color:var(--purple);}
 
-    /* ── Stats grid ─────────────────────────────────────────────────────── */
-    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 24px; }
+    /* ── Section titles ── */
+    .section-title { font-size:16px; font-weight:700; margin-bottom:14px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .section-title .tag { background:var(--bg3); color:var(--muted); font-size:11px; padding:2px 8px; border-radius:10px; font-weight:500; }
 
-    /* ── Tables ─────────────────────────────────────────────────────────── */
-    .table-wrap { overflow-x: auto; }
-    table { width: 100%; border-collapse: collapse; }
-    th { color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
-    td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
-    tr:last-child td { border-bottom: none; }
-    tr:hover td { background: var(--bg3); }
-    .text-right { text-align: right; }
+    /* ── Game cards (lobby) ── */
+    .game-card { background:var(--bg2); border:1px solid var(--border); border-radius:10px; padding:18px; display:flex; flex-direction:column; gap:10px; transition:border-color .2s; }
+    .game-card:hover { border-color:var(--blue); }
+    .game-card-header { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
+    .game-card-title  { font-size:15px; font-weight:700; }
+    .game-card-meta   { font-size:12px; color:var(--muted); display:flex; flex-direction:column; gap:4px; }
+    .game-card-footer { display:flex; align-items:center; justify-content:space-between; gap:8px; padding-top:8px; border-top:1px solid var(--border); }
+    .game-tag { background:var(--bg3); border:1px solid var(--border); border-radius:6px; padding:3px 8px; font-size:11px; color:var(--muted); }
 
-    /* ── Colors ─────────────────────────────────────────────────────────── */
-    .green  { color: var(--green); }
-    .red    { color: var(--red); }
-    .muted  { color: var(--muted); }
-    .gold   { color: var(--gold); }
+    /* ── Trade layout ── */
+    .trade-layout { display:grid; grid-template-columns:1fr 320px; gap:18px; }
+    @media(max-width:720px) { .trade-layout{grid-template-columns:1fr;} }
 
-    /* ── Section titles ─────────────────────────────────────────────────── */
-    .section-title { font-size: 16px; font-weight: 700; margin-bottom: 16px; display: flex; align-items: center; gap: 10px; }
-    .section-title .badge { background: var(--bg3); color: var(--muted); font-size: 11px; padding: 2px 8px; border-radius: 10px; }
+    /* ── Search ── */
+    .search-wrap { position:relative; margin-bottom:18px; }
+    .search-icon { position:absolute; left:11px; top:50%; transform:translateY(-50%); color:var(--muted); pointer-events:none; }
+    .search-wrap input { padding-left:34px; width:100%; background:var(--bg3); border:1px solid var(--border); border-radius:var(--radius); color:var(--text); padding:8px 11px 8px 34px; font-size:14px; outline:none; }
+    .search-wrap input:focus { border-color:var(--blue); }
+    #search-dropdown { position:absolute; top:calc(100% + 4px); left:0; right:0; background:var(--bg2); border:1px solid var(--border); border-radius:var(--radius); z-index:200; max-height:280px; overflow-y:auto; display:none; }
+    .search-item { padding:9px 13px; cursor:pointer; display:flex; align-items:center; justify-content:space-between; }
+    .search-item:hover { background:var(--bg3); }
+    .search-sym  { font-weight:700; font-size:13px; }
+    .search-name { font-size:12px; color:var(--muted); margin-top:1px; }
+    .search-exch { font-size:11px; color:var(--muted); }
 
-    /* ── Trade panel ────────────────────────────────────────────────────── */
-    .trade-layout { display: grid; grid-template-columns: 1fr 340px; gap: 20px; }
-    @media (max-width: 720px) { .trade-layout { grid-template-columns: 1fr; } }
+    /* ── Quote card ── */
+    #quote-card { display:none; }
+    .quote-header { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:14px; }
+    .quote-sym  { font-size:20px; font-weight:800; }
+    .quote-name { font-size:12px; color:var(--muted); margin-top:2px; }
+    .quote-price  { font-size:30px; font-weight:800; text-align:right; }
+    .quote-change { font-size:13px; text-align:right; }
+    .quote-meta { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:14px; }
+    .quote-meta-item { background:var(--bg3); border-radius:6px; padding:7px 11px; }
+    .quote-meta-label { font-size:11px; color:var(--muted); }
+    .quote-meta-value { font-size:13px; font-weight:600; margin-top:2px; }
+    #chart-container { margin-bottom:14px; background:var(--bg3); border-radius:6px; padding:8px; min-height:75px; }
 
-    .search-wrap { position: relative; margin-bottom: 20px; }
-    .search-wrap input { padding-left: 38px; }
-    .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
-    #search-dropdown {
-      position: absolute;
-      top: calc(100% + 4px);
-      left: 0; right: 0;
-      background: var(--bg2);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      z-index: 200;
-      max-height: 280px;
-      overflow-y: auto;
-      display: none;
-    }
-    .search-item { padding: 10px 14px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; }
-    .search-item:hover { background: var(--bg3); }
-    .search-sym { font-weight: 700; font-size: 13px; }
-    .search-name { font-size: 12px; color: var(--muted); margin-top: 1px; }
-    .search-exch { font-size: 11px; color: var(--muted); }
+    /* ── Trade form ── */
+    .trade-tabs  { display:flex; margin-bottom:12px; border-radius:var(--radius); overflow:hidden; border:1px solid var(--border); }
+    .trade-tab   { flex:1; background:none; border:none; cursor:pointer; padding:8px; font-size:13px; font-weight:600; color:var(--muted); transition:background .15s,color .15s; }
+    .trade-tab.buy.active  { background:var(--green); color:#000; }
+    .trade-tab.sell.active { background:var(--red);   color:#fff; }
+    .shares-row  { display:flex; gap:7px; }
+    .shares-row input { flex:1; background:var(--bg3); border:1px solid var(--border); border-radius:var(--radius); color:var(--text); padding:8px 11px; font-size:14px; outline:none; }
+    .shares-row input:focus { border-color:var(--blue); }
+    .shares-hint { font-size:11px; color:var(--muted); margin-top:4px; }
+    #current-holding { display:none; background:var(--bg3); border:1px solid var(--border); border-radius:6px; padding:9px 13px; margin-bottom:12px; font-size:13px; }
+    #trade-status-notice { display:none; background:#1e3a5f; color:#93c5fd; border-radius:6px; padding:9px 13px; margin-bottom:12px; font-size:12px; }
 
-    /* ── Quote card ─────────────────────────────────────────────────────── */
-    #quote-card { display: none; }
-    .quote-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 16px; }
-    .quote-sym  { font-size: 22px; font-weight: 800; }
-    .quote-name { font-size: 13px; color: var(--muted); margin-top: 2px; }
-    .quote-price { font-size: 32px; font-weight: 800; text-align: right; }
-    .quote-change { font-size: 14px; text-align: right; }
-    .quote-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
-    .quote-meta-item { background: var(--bg3); border-radius: 6px; padding: 8px 12px; }
-    .quote-meta-label { font-size: 11px; color: var(--muted); }
-    .quote-meta-value { font-size: 14px; font-weight: 600; margin-top: 2px; }
+    /* ── Futures ── */
+    .futures-tabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:16px; }
+    .futures-cat-btn { background:var(--bg3); border:1px solid var(--border); color:var(--muted); border-radius:20px; padding:4px 12px; font-size:12px; cursor:pointer; transition:background .15s,color .15s,border-color .15s; }
+    .futures-cat-btn.active { background:var(--purple); border-color:var(--purple); color:#fff; }
+    .futures-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px; margin-bottom:20px; }
+    .futures-card { background:var(--bg3); border:1px solid var(--border); border-radius:8px; padding:12px; cursor:pointer; transition:border-color .2s; }
+    .futures-card:hover { border-color:var(--purple); }
+    .futures-card.selected { border-color:var(--purple); background:#2d1f4a; }
+    .futures-card-sym  { font-size:14px; font-weight:700; }
+    .futures-card-name { font-size:11px; color:var(--muted); margin-top:2px; }
+    .futures-card-price{ font-size:17px; font-weight:700; margin-top:6px; }
+    .futures-card-change{ font-size:11px; }
+    .futures-direction-tabs { display:flex; margin-bottom:12px; border-radius:var(--radius); overflow:hidden; border:1px solid var(--border); }
+    .dir-tab { flex:1; background:none; border:none; cursor:pointer; padding:8px; font-size:13px; font-weight:600; color:var(--muted); }
+    .dir-tab.long.active  { background:var(--green); color:#000; }
+    .dir-tab.short.active { background:var(--red);   color:#fff; }
+    .futures-info-box { background:var(--bg3); border-radius:6px; padding:10px 12px; margin-bottom:12px; font-size:12px; line-height:1.7; }
 
-    /* ── Mini chart ─────────────────────────────────────────────────────── */
-    #chart-container { margin-bottom: 16px; background: var(--bg3); border-radius: 6px; padding: 10px; min-height: 80px; }
-    #chart-container svg { display: block; }
+    /* ── History pills ── */
+    .pill { display:inline-block; padding:2px 7px; border-radius:10px; font-size:11px; font-weight:700; text-transform:uppercase; }
+    .pill-buy   { background:var(--green-dim); color:var(--green); }
+    .pill-sell  { background:var(--red-dim);   color:var(--red); }
+    .pill-open  { background:#2d1f4a; color:var(--purple); }
+    .pill-close { background:#3d1a1a; color:#f87171; }
+    .pill-add   { background:#1a2d4a; color:#60a5fa; }
+    .pill-long  { background:var(--green-dim); color:var(--green); }
+    .pill-short { background:var(--red-dim);   color:var(--red); }
 
-    /* ── Trade form ─────────────────────────────────────────────────────── */
-    .trade-tabs { display: flex; gap: 0; margin-bottom: 14px; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border); }
-    .trade-tab { flex: 1; background: none; border: none; cursor: pointer; padding: 9px; font-size: 13px; font-weight: 600; color: var(--muted); transition: background .15s, color .15s; }
-    .trade-tab.buy.active  { background: var(--green); color: #000; }
-    .trade-tab.sell.active { background: var(--red); color: #fff; }
+    /* ── Admin ── */
+    .admin-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    @media(max-width:600px){.admin-grid{grid-template-columns:1fr;}}
+    .markets-check { display:flex; flex-wrap:wrap; gap:8px; }
+    .markets-check label { display:flex; align-items:center; gap:6px; background:var(--bg3); border:1px solid var(--border); border-radius:6px; padding:6px 12px; cursor:pointer; font-size:12px; user-select:none; }
+    .markets-check label:hover { border-color:var(--blue); }
+    .markets-check input[type=checkbox] { accent-color:var(--blue); }
+    .toggle-row { display:flex; align-items:center; gap:8px; }
+    .toggle-row input[type=checkbox] { accent-color:var(--blue); width:15px; height:15px; }
 
-    .shares-row { display: flex; gap: 8px; }
-    .shares-row input { flex: 1; }
-    .shares-hint { font-size: 11px; color: var(--muted); margin-top: 5px; }
+    /* ── Leaderboard ── */
+    .rank-1 td:first-child::before{content:'🥇 ';} .rank-2 td:first-child::before{content:'🥈 ';} .rank-3 td:first-child::before{content:'🥉 ';}
+    .rank-self td { color:var(--blue) !important; }
 
-    /* ── Holding badge ──────────────────────────────────────────────────── */
-    #current-holding { display: none; background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; margin-bottom: 14px; font-size: 13px; }
+    /* ── Modal ── */
+    .modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.65); z-index:500; display:flex; align-items:center; justify-content:center; padding:20px; }
+    .modal-card { background:var(--bg2); border:1px solid var(--border); border-radius:12px; padding:22px; width:100%; max-width:420px; max-height:90vh; overflow-y:auto; }
+    .modal-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; }
+    .modal-header h3 { font-size:16px; font-weight:700; }
+    .modal-close { background:none; border:none; color:var(--muted); cursor:pointer; font-size:20px; line-height:1; padding:2px 6px; border-radius:4px; }
+    .modal-close:hover { background:var(--bg3); }
+    .modal-info { background:var(--bg3); border-radius:6px; padding:11px 13px; margin-bottom:14px; font-size:13px; line-height:1.7; }
 
-    /* ── Leaderboard ────────────────────────────────────────────────────── */
-    .rank-1 td:first-child::before { content: '🥇 '; }
-    .rank-2 td:first-child::before { content: '🥈 '; }
-    .rank-3 td:first-child::before { content: '🥉 '; }
-    .rank-self { background: rgba(59,130,246,.08) !important; }
-    .rank-self td { color: var(--blue) !important; }
+    /* ── Toast ── */
+    #toast { position:fixed; bottom:22px; right:22px; padding:11px 18px; border-radius:var(--radius); font-size:13px; font-weight:500; z-index:999; max-width:340px; opacity:0; transform:translateY(8px); transition:opacity .3s,transform .3s; pointer-events:none; }
+    #toast.show { opacity:1; transform:translateY(0); }
+    #toast.success { background:#166534; color:#86efac; border:1px solid #22c55e44; }
+    #toast.error   { background:#7f1d1d; color:#fca5a5; border:1px solid #ef444444; }
+    #toast.info    { background:#1e3a5f; color:#93c5fd; border:1px solid #3b82f644; }
 
-    /* ── History ────────────────────────────────────────────────────────── */
-    .pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
-    .pill-buy  { background: var(--green-dim); color: var(--green); }
-    .pill-sell { background: var(--red-dim);   color: var(--red); }
-
-    /* ── Admin ──────────────────────────────────────────────────────────── */
-    .admin-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-    @media (max-width: 600px) { .admin-grid { grid-template-columns: 1fr; } }
-    .markets-check { display: flex; flex-wrap: wrap; gap: 10px; }
-    .markets-check label { display: flex; align-items: center; gap: 6px; background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 7px 14px; cursor: pointer; font-size: 13px; user-select: none; }
-    .markets-check label:hover { border-color: var(--blue); }
-    .markets-check input[type=checkbox] { accent-color: var(--blue); width: 14px; height: 14px; }
-
-    /* ── Alert / toast ──────────────────────────────────────────────────── */
-    #toast {
-      position: fixed; bottom: 24px; right: 24px;
-      padding: 12px 20px; border-radius: var(--radius);
-      font-size: 14px; font-weight: 500;
-      z-index: 999;
-      max-width: 360px;
-      opacity: 0;
-      transform: translateY(10px);
-      transition: opacity .3s, transform .3s;
-      pointer-events: none;
-    }
-    #toast.show { opacity: 1; transform: translateY(0); }
-    #toast.success { background: #166534; color: #86efac; border: 1px solid #22c55e44; }
-    #toast.error   { background: #7f1d1d; color: #fca5a5; border: 1px solid #ef444444; }
-    #toast.info    { background: #1e3a5f; color: #93c5fd; border: 1px solid #3b82f644; }
-
-    /* ── Spinner ────────────────────────────────────────────────────────── */
-    .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid transparent; border-top-color: currentColor; border-radius: 50%; animation: spin .6s linear infinite; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    /* ── Empty state ────────────────────────────────────────────────────── */
-    .empty { text-align: center; padding: 48px 20px; color: var(--muted); }
-    .empty-icon { font-size: 40px; margin-bottom: 12px; }
-    .empty-text { font-size: 15px; }
-
-    /* ── Error ──────────────────────────────────────────────────────────── */
-    .error-msg { color: var(--red); font-size: 13px; margin-top: 8px; }
-
-    /* ── No-game notice ─────────────────────────────────────────────────── */
-    .no-game-notice { background: var(--bg2); border: 1px dashed var(--border); border-radius: 10px; padding: 40px; text-align: center; }
-    .no-game-notice h3 { font-size: 18px; margin-bottom: 8px; }
-    .no-game-notice p  { color: var(--muted); }
-
-    /* ── Modal ───────────────────────────────────────────────────────────────── */
-    .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.65); z-index: 500; display: flex; align-items: center; justify-content: center; padding: 20px; }
-    .modal-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 24px; width: 100%; max-width: 400px; }
-    .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
-    .modal-header h3 { font-size: 17px; font-weight: 700; }
-    .modal-close { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 20px; line-height: 1; padding: 2px 6px; border-radius: 4px; }
-    .modal-close:hover { background: var(--bg3); color: var(--text); }
-    .modal-info { background: var(--bg3); border-radius: 6px; padding: 12px 14px; margin-bottom: 16px; font-size: 13px; line-height: 1.7; }
+    /* ── Misc ── */
+    .spinner { display:inline-block; width:14px; height:14px; border:2px solid transparent; border-top-color:currentColor; border-radius:50%; animation:spin .6s linear infinite; }
+    @keyframes spin{to{transform:rotate(360deg);}}
+    .empty { text-align:center; padding:44px 20px; color:var(--muted); }
+    .empty-icon { font-size:36px; margin-bottom:10px; }
+    .error-msg { color:var(--red); font-size:12px; margin-top:7px; }
+    .info-box { background:#1e3a5f; color:#93c5fd; border-radius:6px; padding:10px 14px; font-size:12px; line-height:1.6; margin-bottom:12px; }
+    .warn-box { background:#3d2a00; color:#fcd34d; border-radius:6px; padding:10px 14px; font-size:12px; line-height:1.6; margin-bottom:12px; }
+    hr.sep { border:none; border-top:1px solid var(--border); margin:18px 0; }
   </style>
 </head>
 <body>
 
-<!-- ══ AUTH SHELL ══════════════════════════════════════════════════════════ -->
+<!-- ══ AUTH ══════════════════════════════════════════════════════════════════ -->
 <div id="auth-shell">
   <div class="auth-card">
-    <div class="auth-logo">
-      <h1>📈 StockArena</h1>
-      <p>Real stocks. Simulated money. Real competition.</p>
-    </div>
-
+    <div class="auth-logo"><h1>📈 StockArena</h1><p>Real stocks. Simulated money. Real competition.</p></div>
     <div class="auth-tabs">
       <button class="auth-tab active" onclick="App.switchAuthTab('login')">Sign In</button>
       <button class="auth-tab" onclick="App.switchAuthTab('register')">Register</button>
     </div>
-
-    <!-- Login form -->
     <div id="form-login">
-      <div class="form-group">
-        <label>Username</label>
-        <input id="login-username" type="text" placeholder="Enter your username" autocomplete="username">
-      </div>
-      <div class="form-group">
-        <label>Password</label>
-        <input id="login-password" type="password" placeholder="Enter your password" autocomplete="current-password">
-      </div>
+      <div class="form-group"><label>Username</label><input id="login-username" type="text" placeholder="Username" autocomplete="username"></div>
+      <div class="form-group"><label>Password</label><input id="login-password" type="password" placeholder="Password" autocomplete="current-password"></div>
       <div id="login-error" class="error-msg"></div>
-      <button class="btn btn-primary btn-full" style="margin-top:14px" onclick="App.login()">Sign In</button>
+      <button class="btn btn-primary btn-full" style="margin-top:12px" onclick="App.login()">Sign In</button>
     </div>
-
-    <!-- Register form -->
     <div id="form-register" style="display:none">
-      <div class="form-group">
-        <label>Username</label>
-        <input id="reg-username" type="text" placeholder="Choose a username" autocomplete="username">
-      </div>
-      <div class="form-group">
-        <label>Email</label>
-        <input id="reg-email" type="email" placeholder="your@email.com" autocomplete="email">
-      </div>
-      <div class="form-group">
-        <label>Password</label>
-        <input id="reg-password" type="password" placeholder="Min 6 characters" autocomplete="new-password">
-      </div>
+      <div class="form-group"><label>Username</label><input id="reg-username" type="text" placeholder="Choose a username" autocomplete="username"></div>
+      <div class="form-group"><label>Email</label><input id="reg-email" type="email" placeholder="your@email.com" autocomplete="email"></div>
+      <div class="form-group"><label>Password</label><input id="reg-password" type="password" placeholder="Min 6 characters" autocomplete="new-password"></div>
       <div id="reg-error" class="error-msg"></div>
-      <button class="btn btn-primary btn-full" style="margin-top:14px" onclick="App.register()">Create Account</button>
-      <p style="text-align:center;color:var(--muted);font-size:12px;margin-top:12px">
-        The first account created becomes admin.
-      </p>
+      <button class="btn btn-primary btn-full" style="margin-top:12px" onclick="App.register()">Create Account</button>
+      <p style="text-align:center;color:var(--muted);font-size:11px;margin-top:10px">First account created becomes admin.</p>
     </div>
   </div>
 </div>
 
-<!-- ══ APP SHELL ════════════════════════════════════════════════════════════ -->
+<!-- ══ APP ════════════════════════════════════════════════════════════════════ -->
 <div id="app-shell">
-
   <nav>
     <span class="nav-brand">📈 Stock<span>Arena</span></span>
-    <div class="nav-links">
-      <button class="nav-btn" onclick="App.navigate('dashboard')">Dashboard</button>
-      <button class="nav-btn" onclick="App.navigate('trade')">Trade</button>
-      <button class="nav-btn" onclick="App.navigate('leaderboard')">Leaderboard</button>
-      <button class="nav-btn" onclick="App.navigate('history')">History</button>
-      <button class="nav-btn" id="nav-admin" style="display:none" onclick="App.navigate('admin')">⚙ Admin</button>
+    <div id="nav-game-context" style="display:none;align-items:center;gap:4px">
+      <div class="nav-divider"></div>
+      <button class="nav-btn back" onclick="App.exitGame()">← Games</button>
+      <div class="nav-divider"></div>
+      <span class="nav-game-name" id="nav-game-name"></span>
+    </div>
+    <div class="nav-links" id="nav-links">
+      <button class="nav-btn active" data-view="games" onclick="App.navigate('games')">My Games</button>
+      <button class="nav-btn" data-view="portfolio" onclick="App.navigate('portfolio')" style="display:none" id="nav-portfolio">Portfolio</button>
+      <button class="nav-btn" data-view="trade"     onclick="App.navigate('trade')"     style="display:none" id="nav-trade">Trade</button>
+      <button class="nav-btn" data-view="futures"   onclick="App.navigate('futures')"   style="display:none" id="nav-futures">Futures</button>
+      <button class="nav-btn" data-view="leaderboard" onclick="App.navigate('leaderboard')" style="display:none" id="nav-leaderboard">Leaderboard</button>
+      <button class="nav-btn" data-view="history"   onclick="App.navigate('history')"   style="display:none" id="nav-history">History</button>
+      <button class="nav-btn" data-view="admin"     onclick="App.navigate('admin')"     style="display:none" id="nav-admin">⚙ Admin</button>
     </div>
     <div class="nav-user">
       <span class="nav-username" id="nav-username"></span>
-      <span class="badge-admin" id="nav-admin-badge" style="display:none">ADMIN</span>
+      <span class="badge badge-admin" id="nav-admin-badge" style="display:none">ADMIN</span>
       <button class="btn btn-ghost btn-sm" onclick="App.logout()">Logout</button>
     </div>
   </nav>
-
   <div id="game-banner"></div>
 
   <main>
 
-    <!-- ── DASHBOARD ─────────────────────────────────────────────────────── -->
-    <div id="view-dashboard" class="view">
-      <div class="section-title">Portfolio <span id="dash-updated" class="badge"></span></div>
-      <div id="dash-no-game" class="no-game-notice" style="display:none">
-        <h3>No active game</h3>
-        <p id="dash-no-game-msg">Ask the admin to configure a game.</p>
-      </div>
-      <div id="dash-content">
-        <div class="stats-grid" id="dash-stats"></div>
-        <div class="card">
-          <div class="section-title" style="margin-bottom:14px">Holdings <span id="holdings-count" class="badge"></span></div>
-          <div class="table-wrap">
-            <table id="holdings-table">
-              <thead>
-                <tr>
-                  <th>Symbol</th>
-                  <th>Company</th>
-                  <th class="text-right">Shares</th>
-                  <th class="text-right">Avg Cost</th>
-                  <th class="text-right">Price</th>
-                  <th class="text-right">Value</th>
-                  <th class="text-right">Gain/Loss</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody id="holdings-body"></tbody>
-            </table>
-          </div>
-          <div id="holdings-empty" class="empty" style="display:none">
-            <div class="empty-icon">📊</div>
-            <div class="empty-text">No holdings yet — go make some trades!</div>
-          </div>
-        </div>
+    <!-- ── GAMES LOBBY ─────────────────────────────────────────────────────── -->
+    <div id="view-games" class="view active">
+      <div class="section-title">Available Games</div>
+      <div id="games-list" class="games-grid"></div>
+      <div id="games-empty" class="empty" style="display:none">
+        <div class="empty-icon">🎮</div>
+        <div class="empty-text">No games yet — ask an admin to create one.</div>
       </div>
     </div>
 
-    <!-- ── TRADE ──────────────────────────────────────────────────────────── -->
+    <!-- ── PORTFOLIO ───────────────────────────────────────────────────────── -->
+    <div id="view-portfolio" class="view">
+      <div class="section-title">Portfolio <span id="dash-updated" class="tag"></span></div>
+      <div id="dash-stats" class="stats-grid"></div>
+      <div class="card" style="margin-bottom:16px">
+        <div class="section-title" style="margin-bottom:12px">Stock Holdings <span id="holdings-count" class="tag">0</span></div>
+        <div class="table-wrap">
+          <table id="holdings-table" style="display:none">
+            <thead><tr><th>Symbol</th><th>Company</th><th class="text-right">Shares</th><th class="text-right">Avg Cost</th><th class="text-right">Price</th><th class="text-right">Value</th><th class="text-right">Gain/Loss</th><th></th></tr></thead>
+            <tbody id="holdings-body"></tbody>
+          </table>
+        </div>
+        <div id="holdings-empty" class="empty"><div class="empty-icon">📊</div><div class="empty-text">No holdings yet — go trade!</div></div>
+      </div>
+      <div class="card" id="futures-positions-card" style="display:none">
+        <div class="section-title" style="margin-bottom:12px">Futures Positions <span id="futures-count" class="tag">0</span></div>
+        <div class="table-wrap">
+          <table id="futures-table" style="display:none">
+            <thead><tr><th>Symbol</th><th>Name</th><th>Direction</th><th class="text-right">Contracts</th><th class="text-right">Entry</th><th class="text-right">Current</th><th class="text-right">Unrealized P&amp;L</th><th class="text-right">Margin</th><th></th></tr></thead>
+            <tbody id="futures-body"></tbody>
+          </table>
+        </div>
+        <div id="futures-empty" class="empty"><div class="empty-icon">📉</div><div class="empty-text">No open futures positions.</div></div>
+      </div>
+    </div>
+
+    <!-- ── TRADE ───────────────────────────────────────────────────────────── -->
     <div id="view-trade" class="view">
       <div class="section-title">Trade Stocks</div>
       <div class="trade-layout">
-        <!-- Left: search + chart + quote info -->
         <div>
           <div class="search-wrap">
             <span class="search-icon">🔍</span>
-            <div class="form-group" style="margin:0">
-              <input id="stock-search" type="text" placeholder="Search by symbol or company name…" autocomplete="off" oninput="App.onSearchInput(this.value)" onfocus="App.onSearchFocus()">
-            </div>
+            <input id="stock-search" type="text" placeholder="Search by symbol or company name…" autocomplete="off" oninput="App.onSearchInput(this.value)" onfocus="App.onSearchFocus()">
             <div id="search-dropdown"></div>
           </div>
-
           <div id="quote-card" class="card">
             <div class="quote-header">
-              <div>
-                <div class="quote-sym" id="q-symbol"></div>
-                <div class="quote-name" id="q-name"></div>
-                <div class="muted" style="font-size:12px;margin-top:4px" id="q-exchange"></div>
-              </div>
-              <div>
-                <div class="quote-price" id="q-price"></div>
-                <div class="quote-change" id="q-change"></div>
-              </div>
+              <div><div class="quote-sym" id="q-symbol"></div><div class="quote-name" id="q-name"></div><div class="muted" style="font-size:11px;margin-top:3px" id="q-exchange"></div></div>
+              <div><div class="quote-price" id="q-price"></div><div class="quote-change" id="q-change"></div></div>
             </div>
-
-            <div id="chart-container"><div class="muted" style="text-align:center;padding:20px;font-size:12px">Loading chart…</div></div>
-
+            <div id="chart-container"><div class="muted" style="text-align:center;padding:16px;font-size:12px">Loading chart…</div></div>
             <div class="quote-meta">
               <div class="quote-meta-item"><div class="quote-meta-label">Open</div><div class="quote-meta-value" id="q-open"></div></div>
               <div class="quote-meta-item"><div class="quote-meta-label">Volume</div><div class="quote-meta-value" id="q-vol"></div></div>
-              <div class="quote-meta-item"><div class="quote-meta-label">Day High</div><div class="quote-meta-value" id="q-high"></div></div>
-              <div class="quote-meta-item"><div class="quote-meta-label">Day Low</div><div class="quote-meta-value" id="q-low"></div></div>
+              <div class="quote-meta-item"><div class="quote-meta-label">High</div><div class="quote-meta-value" id="q-high"></div></div>
+              <div class="quote-meta-item"><div class="quote-meta-label">Low</div><div class="quote-meta-value" id="q-low"></div></div>
             </div>
-
-            <div class="muted" style="font-size:11px;margin-top:4px">Prices from Yahoo Finance · 5-min cache · Not financial advice</div>
-          </div>
-
-          <div id="trade-no-game" class="no-game-notice" style="display:none">
-            <h3>No active game</h3>
-            <p>Ask the admin to set up a game before trading.</p>
+            <div class="muted" style="font-size:10px">Prices from Yahoo Finance · 5-min cache · Not financial advice</div>
           </div>
         </div>
-
-        <!-- Right: trade form -->
         <div>
-          <div class="card" id="trade-form-card" style="display:none">
-            <div id="trade-status-notice" style="display:none;background:#1e3a5f;color:#93c5fd;border-radius:6px;padding:10px 14px;margin-bottom:14px;font-size:13px"></div>
-            <div id="current-holding">
-              <span id="holding-info"></span>
-            </div>
+          <div id="trade-select-hint" class="card" style="text-align:center;padding:38px 18px;color:var(--muted)"><div style="font-size:30px;margin-bottom:8px">🔎</div>Search for a stock to trade.</div>
+          <div id="trade-form-card" class="card" style="display:none">
+            <div id="trade-status-notice" class="info-box" style="display:none"></div>
+            <div id="current-holding"><span id="holding-info"></span></div>
             <div class="trade-tabs">
               <button class="trade-tab buy active" onclick="App.setTradeType('buy')">BUY</button>
               <button class="trade-tab sell" onclick="App.setTradeType('sell')">SELL</button>
@@ -469,888 +357,883 @@
               </div>
               <div class="shares-hint" id="trade-cost-hint"></div>
             </div>
-
-            <div style="background:var(--bg3);border-radius:6px;padding:12px;margin-bottom:14px">
-              <div style="display:flex;justify-content:space-between;margin-bottom:6px">
-                <span class="muted">Estimated Total</span>
-                <span id="trade-total" style="font-weight:700">$0.00</span>
-              </div>
-              <div style="display:flex;justify-content:space-between">
-                <span class="muted">Cash Available</span>
-                <span id="trade-cash" style="font-weight:600">$0.00</span>
-              </div>
+            <div style="background:var(--bg3);border-radius:6px;padding:11px;margin-bottom:12px">
+              <div style="display:flex;justify-content:space-between;margin-bottom:5px"><span class="muted">Estimated Total</span><span id="trade-total" style="font-weight:700">$0.00</span></div>
+              <div style="display:flex;justify-content:space-between"><span class="muted">Cash Available</span><span id="trade-cash" style="font-weight:600">$0.00</span></div>
             </div>
-
-            <div id="trade-error" class="error-msg" style="margin-bottom:10px"></div>
-            <button class="btn btn-full btn-green" id="trade-submit-btn" onclick="App.executeTrade()">
-              <span id="trade-submit-label">Buy</span>
-            </button>
-          </div>
-
-          <div class="card" id="trade-select-hint" style="color:var(--muted);text-align:center;padding:40px 20px">
-            <div style="font-size:32px;margin-bottom:10px">🔎</div>
-            Search for a stock on the left to start trading.
+            <div id="trade-error" class="error-msg" style="margin-bottom:8px"></div>
+            <button class="btn btn-full btn-green" id="trade-submit-btn" onclick="App.executeTrade()"><span id="trade-submit-label">Buy</span></button>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- ── LEADERBOARD ────────────────────────────────────────────────────── -->
+    <!-- ── FUTURES ─────────────────────────────────────────────────────────── -->
+    <div id="view-futures" class="view">
+      <div class="section-title">Futures Trading
+        <span class="tag" id="futures-margin-rate"></span>
+      </div>
+      <div class="info-box">
+        <strong>How futures work in StockArena:</strong> Go <span class="green">LONG</span> to profit when price rises, or <span class="red">SHORT</span> to profit when price falls.
+        Margin is reserved from your cash. P&L = contracts × (exit&nbsp;−&nbsp;entry) for long, (entry&nbsp;−&nbsp;exit) for short.
+        Close your position to realize gains or losses and release margin.
+      </div>
+      <div class="futures-tabs" id="futures-cat-tabs"></div>
+      <div class="futures-grid" id="futures-contracts-grid"></div>
+      <div id="futures-trade-panel" style="display:none">
+        <hr class="sep">
+        <div style="display:grid;grid-template-columns:1fr 300px;gap:18px">
+          <div class="card">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px">
+              <div><div style="font-size:18px;font-weight:800" id="ft-symbol"></div><div class="muted" style="font-size:12px" id="ft-name"></div><div style="font-size:11px;margin-top:2px" id="ft-desc"></div></div>
+              <div style="text-align:right"><div style="font-size:26px;font-weight:800" id="ft-price"></div><div id="ft-change" style="font-size:13px"></div></div>
+            </div>
+            <div id="ft-open-pos" class="warn-box" style="display:none"></div>
+          </div>
+          <div class="card">
+            <div class="futures-direction-tabs">
+              <button class="dir-tab long active" onclick="App.setFuturesDir('long')">📈 LONG</button>
+              <button class="dir-tab short" onclick="App.setFuturesDir('short')">📉 SHORT</button>
+            </div>
+            <div class="form-group">
+              <label>Contracts</label>
+              <div class="shares-row">
+                <input id="ft-contracts" type="number" min="0.01" step="any" placeholder="1" oninput="App.updateFuturesTotal()">
+                <button class="btn btn-ghost btn-sm" onclick="App.setMaxFuturesContracts()">Max</button>
+              </div>
+            </div>
+            <div style="background:var(--bg3);border-radius:6px;padding:10px;margin-bottom:12px;font-size:12px">
+              <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span class="muted">Margin Required</span><span id="ft-margin-needed" style="font-weight:700">$0.00</span></div>
+              <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span class="muted">Cash Available</span><span id="ft-cash" style="font-weight:600">$0.00</span></div>
+              <div style="display:flex;justify-content:space-between;border-top:1px solid var(--border);padding-top:6px;margin-top:4px"><span class="muted">Cash After Open</span><span id="ft-cash-after">—</span></div>
+            </div>
+            <div id="futures-error" class="error-msg" style="margin-bottom:8px"></div>
+            <button class="btn btn-full btn-purple" id="ft-submit-btn" onclick="App.openFuturesPosition()"><span id="ft-submit-label">Open Long Position</span></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── LEADERBOARD ─────────────────────────────────────────────────────── -->
     <div id="view-leaderboard" class="view">
       <div class="section-title">Leaderboard</div>
       <div class="card">
         <div class="table-wrap">
           <table>
-            <thead>
-              <tr>
-                <th>Rank</th>
-                <th>Player</th>
-                <th class="text-right">Cash</th>
-                <th class="text-right">Stocks</th>
-                <th class="text-right">Total Value</th>
-                <th class="text-right">Gain / Loss</th>
-              </tr>
-            </thead>
+            <thead><tr><th>Rank</th><th>Player</th><th class="text-right">Cash</th><th class="text-right">Stocks</th><th class="text-right">Futures P&amp;L</th><th class="text-right">Total Value</th><th class="text-right">Gain/Loss</th></tr></thead>
             <tbody id="leaderboard-body"></tbody>
           </table>
         </div>
-        <div id="leaderboard-empty" class="empty" style="display:none">
-          <div class="empty-icon">🏆</div>
-          <div class="empty-text">No players yet — register and start trading!</div>
-        </div>
+        <div id="leaderboard-empty" class="empty" style="display:none"><div class="empty-icon">🏆</div><div class="empty-text">No players have joined yet.</div></div>
       </div>
     </div>
 
     <!-- ── HISTORY ─────────────────────────────────────────────────────────── -->
     <div id="view-history" class="view">
       <div class="section-title">Transaction History</div>
-      <div class="card">
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Date / Time</th>
-                <th>Type</th>
-                <th>Symbol</th>
-                <th>Company</th>
-                <th class="text-right">Shares</th>
-                <th class="text-right">Price</th>
-                <th class="text-right">Total</th>
-              </tr>
-            </thead>
-            <tbody id="history-body"></tbody>
-          </table>
-        </div>
-        <div id="history-empty" class="empty" style="display:none">
-          <div class="empty-icon">📋</div>
-          <div class="empty-text">No transactions yet.</div>
-        </div>
+      <div class="card" style="margin-bottom:16px">
+        <div style="font-size:13px;font-weight:600;margin-bottom:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Stocks</div>
+        <div class="table-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Symbol</th><th>Company</th><th class="text-right">Shares</th><th class="text-right">Price</th><th class="text-right">Total</th></tr></thead><tbody id="history-body"></tbody></table></div>
+        <div id="history-empty" class="empty" style="display:none"><div class="empty-icon">📋</div><div class="empty-text">No stock transactions yet.</div></div>
+      </div>
+      <div class="card" id="futures-history-card" style="display:none">
+        <div style="font-size:13px;font-weight:600;margin-bottom:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Futures</div>
+        <div class="table-wrap"><table><thead><tr><th>Date</th><th>Action</th><th>Symbol</th><th>Direction</th><th class="text-right">Contracts</th><th class="text-right">Price</th><th class="text-right">P&amp;L</th></tr></thead><tbody id="futures-history-body"></tbody></table></div>
+        <div id="futures-history-empty" class="empty" style="display:none"><div class="empty-icon">📋</div><div class="empty-text">No futures transactions yet.</div></div>
       </div>
     </div>
 
     <!-- ── ADMIN ───────────────────────────────────────────────────────────── -->
     <div id="view-admin" class="view">
-      <div class="section-title">⚙ Game Configuration</div>
-      <div class="card" style="max-width:640px">
-        <div class="form-group">
-          <label>Game Title</label>
-          <input id="admin-title" type="text" placeholder="Stock Trading Game">
+      <div class="section-title">⚙ Simulations</div>
+
+      <!-- Game list -->
+      <div id="admin-games-list" style="margin-bottom:24px"></div>
+
+      <!-- Create / Edit form -->
+      <div class="card" style="max-width:680px">
+        <div class="section-title" style="font-size:14px;margin-bottom:14px" id="admin-form-title">Create New Simulation</div>
+        <input type="hidden" id="admin-edit-id">
+        <div class="form-group"><label>Game Title</label><input id="admin-title" type="text" placeholder="e.g. Spring Trading Challenge"></div>
+        <div class="admin-grid">
+          <div class="form-group"><label>Start Date</label><input id="admin-start" type="date"></div>
+          <div class="form-group"><label>End Date</label><input id="admin-end" type="date"></div>
         </div>
         <div class="admin-grid">
-          <div class="form-group">
-            <label>Start Date</label>
-            <input id="admin-start" type="date">
-          </div>
-          <div class="form-group">
-            <label>End Date</label>
-            <input id="admin-end" type="date">
-          </div>
-        </div>
-        <div class="form-group">
-          <label>Starting Cash ($)</label>
-          <input id="admin-cash" type="number" min="100" step="100" placeholder="10000">
+          <div class="form-group"><label>Starting Cash ($)</label><input id="admin-cash" type="number" min="100" step="100" placeholder="10000"></div>
+          <div class="form-group"><label>Futures Margin Rate</label><input id="admin-margin" type="number" min="0.01" max="1" step="0.01" placeholder="0.20" title="e.g. 0.20 = 20% of notional"></div>
         </div>
         <div class="form-group">
           <label>Allowed Markets</label>
           <div class="markets-check">
-            <label><input type="checkbox" name="market" value="NYSE" checked> NYSE</label>
+            <label><input type="checkbox" name="market" value="NYSE"   checked> NYSE</label>
             <label><input type="checkbox" name="market" value="NASDAQ" checked> NASDAQ</label>
             <label><input type="checkbox" name="market" value="AMEX"> AMEX</label>
             <label><input type="checkbox" name="market" value="ALL"> All US Markets</label>
           </div>
-          <div class="shares-hint">Trades are restricted to stocks on these exchanges.</div>
         </div>
-        <div class="form-group" style="display:flex;align-items:center;gap:10px">
-          <input type="checkbox" id="admin-fractional" checked style="width:16px;height:16px;accent-color:var(--blue)">
-          <label for="admin-fractional" style="cursor:pointer">Allow fractional shares</label>
+        <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:14px">
+          <div class="toggle-row"><input type="checkbox" id="admin-fractional" checked><label for="admin-fractional">Allow fractional shares</label></div>
+          <div class="toggle-row"><input type="checkbox" id="admin-futures"><label for="admin-futures">Enable futures trading</label></div>
+          <div class="toggle-row"><input type="checkbox" id="admin-active" checked><label for="admin-active">Active (visible to players)</label></div>
         </div>
-
-        <div id="admin-error" class="error-msg" style="margin-bottom:10px"></div>
-        <button class="btn btn-primary" onclick="App.saveGameConfig()">Save &amp; Start New Game</button>
-        <p class="shares-hint" style="margin-top:10px">Creating a new game deactivates the previous one. Existing portfolios are not carried over.</p>
+        <div id="admin-error" class="error-msg" style="margin-bottom:8px"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-primary" onclick="App.saveGameConfig()" id="admin-save-btn">Create Simulation</button>
+          <button class="btn btn-ghost" onclick="App.resetAdminForm()" id="admin-cancel-btn" style="display:none">Cancel Edit</button>
+        </div>
+        <div id="admin-save-note" class="shares-hint" style="margin-top:8px">Starting cash cannot be changed after players join. Start date cannot be changed once game begins.</div>
       </div>
 
-      <div class="section-title" style="margin-top:32px">Players</div>
-      <div class="card">
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr><th>Username</th><th>Email</th><th>Role</th><th>Joined</th></tr>
-            </thead>
-            <tbody id="admin-players-body"></tbody>
-          </table>
-        </div>
-      </div>
+      <div class="section-title" style="margin-top:28px">All Players</div>
+      <div class="card"><div class="table-wrap"><table><thead><tr><th>Username</th><th>Email</th><th>Role</th><th>Joined</th></tr></thead><tbody id="admin-players-body"></tbody></table></div></div>
     </div>
 
   </main>
 </div>
 
-<!-- ══ SELL MODAL ══════════════════════════════════════════════════════════ -->
+<!-- ══ SELL MODAL ═════════════════════════════════════════════════════════════ -->
 <div id="sell-modal" class="modal-backdrop" style="display:none" onclick="if(event.target===this)App.closeSellModal()">
   <div class="modal-card">
-    <div class="modal-header">
-      <h3 id="sell-modal-title">Sell Stock</h3>
-      <button class="modal-close" onclick="App.closeSellModal()">✕</button>
-    </div>
+    <div class="modal-header"><h3 id="sell-modal-title">Sell Stock</h3><button class="modal-close" onclick="App.closeSellModal()">✕</button></div>
     <div class="modal-info" id="sell-modal-info"></div>
-    <div class="form-group">
-      <label>Shares to Sell</label>
-      <div class="shares-row">
-        <input id="sell-modal-shares" type="number" min="0.001" step="any" placeholder="0" oninput="App.updateSellModalTotal()">
-        <button class="btn btn-ghost btn-sm" onclick="App.setSellModalMax()">All</button>
-      </div>
+    <div class="form-group"><label>Shares to Sell</label>
+      <div class="shares-row"><input id="sell-modal-shares" type="number" min="0.001" step="any" placeholder="0" oninput="App.updateSellModalTotal()"><button class="btn btn-ghost btn-sm" onclick="App.setSellModalMax()">All</button></div>
     </div>
-    <div style="background:var(--bg3);border-radius:6px;padding:12px;margin-bottom:14px">
-      <div style="display:flex;justify-content:space-between;margin-bottom:6px">
-        <span class="muted">Estimated Proceeds</span>
-        <span id="sell-modal-total" style="font-weight:700;color:var(--green)">$0.00</span>
-      </div>
-      <div style="display:flex;justify-content:space-between">
-        <span class="muted">Cash After Sale</span>
-        <span id="sell-modal-cash-after" style="font-weight:600;color:var(--muted)">—</span>
-      </div>
+    <div style="background:var(--bg3);border-radius:6px;padding:11px;margin-bottom:12px;font-size:12px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span class="muted">Proceeds</span><span id="sell-modal-total" style="font-weight:700;color:var(--green)">$0.00</span></div>
+      <div style="display:flex;justify-content:space-between"><span class="muted">Cash After</span><span id="sell-modal-cash-after">—</span></div>
     </div>
-    <div id="sell-modal-error" class="error-msg" style="margin-bottom:10px"></div>
-    <button class="btn btn-full btn-red" id="sell-modal-btn" onclick="App.executeSellModal()">
-      <span id="sell-modal-label">Sell</span>
-    </button>
+    <div id="sell-modal-error" class="error-msg" style="margin-bottom:8px"></div>
+    <button class="btn btn-full btn-red" id="sell-modal-btn" onclick="App.executeSellModal()"><span id="sell-modal-label">Sell</span></button>
+  </div>
+</div>
+
+<!-- ══ CLOSE FUTURES MODAL ════════════════════════════════════════════════════ -->
+<div id="close-futures-modal" class="modal-backdrop" style="display:none" onclick="if(event.target===this)App.closeCloseFuturesModal()">
+  <div class="modal-card">
+    <div class="modal-header"><h3 id="cfm-title">Close Position</h3><button class="modal-close" onclick="App.closeCloseFuturesModal()">✕</button></div>
+    <div class="modal-info" id="cfm-info"></div>
+    <div class="form-group"><label>Contracts to Close</label>
+      <div class="shares-row"><input id="cfm-contracts" type="number" min="0.01" step="any" placeholder="0" oninput="App.updateCfmTotal()"><button class="btn btn-ghost btn-sm" onclick="App.setCfmMax()">All</button></div>
+    </div>
+    <div style="background:var(--bg3);border-radius:6px;padding:11px;margin-bottom:12px;font-size:12px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span class="muted">Estimated P&amp;L</span><span id="cfm-pnl" style="font-weight:700">$0.00</span></div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span class="muted">Margin Released</span><span id="cfm-margin">$0.00</span></div>
+      <div style="display:flex;justify-content:space-between"><span class="muted">Cash After Close</span><span id="cfm-cash-after">—</span></div>
+    </div>
+    <div id="cfm-error" class="error-msg" style="margin-bottom:8px"></div>
+    <button class="btn btn-full btn-red" id="cfm-btn" onclick="App.executeClosePosition()"><span id="cfm-label">Close Position</span></button>
   </div>
 </div>
 
 <div id="toast"></div>
 
 <script>
-// ═══════════════════════════════════════════════════════════════════════════════
-// App State & Helpers
-// ═══════════════════════════════════════════════════════════════════════════════
 const App = (() => {
+  // ── State ──────────────────────────────────────────────────────────────────
   let token = localStorage.getItem('sa_token');
   let user  = null;
-  let game  = null;
-  let portfolio = null;
-  let currentSymbol = null;
-  let currentQuote  = null;
-  let tradeType = 'buy';
-  let searchTimer = null;
-  let refreshTimer = null;
+  let currentGameId   = null;
+  let currentGame     = null;
+  let portfolio       = null;
+  let currentSymbol   = null;
+  let currentQuote    = null;
+  let tradeType       = 'buy';
+  let futuresDir      = 'long';
+  let selectedFutures = null;
+  let searchTimer     = null;
+  let refreshTimer    = null;
+  // Sell modal
+  let smSymbol = null, smMaxShares = 0, smPrice = 0;
+  // Close futures modal
+  let cfmSymbol = null, cfmMax = 0, cfmEntry = 0, cfmDir = null, cfmMarginHeld = 0, cfmContracts = 0;
 
-  // ── API wrapper ──────────────────────────────────────────────────────────
+  // ── API ────────────────────────────────────────────────────────────────────
   async function api(method, path, body) {
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = 'Bearer ' + token;
-    const res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-    return data;
+    const h = { 'Content-Type': 'application/json' };
+    if (token) h['Authorization'] = 'Bearer ' + token;
+    const r = await fetch(path, { method, headers: h, body: body ? JSON.stringify(body) : undefined });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+    return d;
   }
 
-  // ── Toast ────────────────────────────────────────────────────────────────
-  let toastTimer;
+  // ── Toast ──────────────────────────────────────────────────────────────────
+  let toastT;
   function toast(msg, type = 'info') {
     const el = document.getElementById('toast');
-    el.textContent = msg;
-    el.className = `show ${type}`;
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => el.classList.remove('show'), 3500);
+    el.textContent = msg; el.className = `show ${type}`;
+    clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('show'), 3500);
   }
 
-  // ── Format helpers ───────────────────────────────────────────────────────
-  function fmt$(n, decimals = 2) {
-    if (n == null || isNaN(n)) return '—';
-    return '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
-  }
-  function fmtPct(n) {
-    if (n == null || isNaN(n)) return '';
-    return (n >= 0 ? '+' : '') + n.toFixed(2) + '%';
-  }
-  function fmtShares(n) {
-    if (n == null) return '—';
-    return n % 1 === 0 ? n.toLocaleString() : n.toFixed(6).replace(/\.?0+$/, '');
-  }
-  function fmtVol(n) {
-    if (!n) return '—';
-    if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';
-    if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
-    if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
-    return n.toString();
-  }
-  function colorClass(n) { return n > 0 ? 'green' : n < 0 ? 'red' : 'muted'; }
-  function fmtDate(s) {
-    if (!s) return '—';
-    return new Date(s + (s.includes('T') ? '' : 'T00:00:00')).toLocaleString();
-  }
-  function daysBetween(a, b) {
-    return Math.round((new Date(b) - new Date(a)) / 86400000);
-  }
+  // ── Format helpers ─────────────────────────────────────────────────────────
+  function fmt$(n, d=2) { if (n==null||isNaN(n)) return '—'; return '$'+Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d}); }
+  function fmtPct(n) { if (n==null||isNaN(n)) return ''; return (n>=0?'+':'')+n.toFixed(2)+'%'; }
+  function fmtShares(n) { if(n==null) return '—'; return n%1===0?n.toLocaleString():n.toFixed(6).replace(/\.?0+$/,''); }
+  function fmtVol(n) { if(!n) return '—'; if(n>=1e9) return (n/1e9).toFixed(2)+'B'; if(n>=1e6) return (n/1e6).toFixed(2)+'M'; if(n>=1e3) return (n/1e3).toFixed(1)+'K'; return n.toString(); }
+  function fmtDate(s) { if(!s) return '—'; return new Date(s+(s.includes('T')?'':'T00:00:00')).toLocaleString(); }
+  function fmtDateShort(s) { if(!s) return '—'; return new Date(s+'T00:00:00').toLocaleDateString(); }
+  function colorClass(n) { return n>0?'green':n<0?'red':'muted'; }
+  function daysBetween(a,b) { return Math.round((new Date(b)-new Date(a))/86400000); }
 
-  // ── Update game banner ───────────────────────────────────────────────────
+  // ── Banner ─────────────────────────────────────────────────────────────────
   function updateBanner() {
     const el = document.getElementById('game-banner');
-    if (!game) { el.className = ''; return; }
-    const s = game.status;
-    if (s === 'pending') {
-      el.textContent = `⏳ "${game.title}" starts on ${new Date(game.start_date + 'T00:00:00').toLocaleDateString()}`;
-      el.className = 'pending';
-    } else if (s === 'active') {
-      const days = daysBetween(new Date().toISOString().split('T')[0], game.end_date);
-      el.textContent = `🟢 "${game.title}" is LIVE — ${days} day${days !== 1 ? 's' : ''} remaining`;
-      el.className = 'active';
-    } else if (s === 'ended') {
-      el.textContent = `🏁 "${game.title}" ended on ${new Date(game.end_date + 'T00:00:00').toLocaleDateString()} — Final standings below`;
-      el.className = 'ended';
-    } else {
-      el.className = '';
-    }
+    if (!currentGame) { el.className=''; return; }
+    const s = currentGame.status;
+    if (s==='pending') { el.textContent=`⏳ "${currentGame.title}" starts ${fmtDateShort(currentGame.start_date)}`; el.className='pending'; }
+    else if (s==='active') { const d=daysBetween(new Date().toISOString().split('T')[0], currentGame.end_date); el.textContent=`🟢 "${currentGame.title}" — ${d} day${d!==1?'s':''} remaining`; el.className='active'; }
+    else if (s==='ended') { el.textContent=`🏁 "${currentGame.title}" ended ${fmtDateShort(currentGame.end_date)}`; el.className='ended'; }
+    else { el.className=''; }
   }
 
-  // ── Navigation ───────────────────────────────────────────────────────────
+  // ── Navigation ─────────────────────────────────────────────────────────────
   function navigate(view) {
-    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-    const viewEl = document.getElementById(`view-${view}`);
-    if (viewEl) viewEl.classList.add('active');
-    document.querySelectorAll('.nav-btn').forEach(b => {
-      if (b.textContent.toLowerCase().includes(view.toLowerCase())) b.classList.add('active');
-    });
+    const el = document.getElementById(`view-${view}`);
+    if (el) el.classList.add('active');
+    document.querySelectorAll('.nav-btn[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view));
     clearInterval(refreshTimer);
-    if (view === 'dashboard')   { loadDashboard(); refreshTimer = setInterval(loadDashboard, 60000); }
-    if (view === 'trade')       loadTrade();
-    if (view === 'leaderboard') loadLeaderboard();
-    if (view === 'history')     loadHistory();
-    if (view === 'admin')       loadAdmin();
+    if (view==='games')       { loadGames(); }
+    if (view==='portfolio')   { loadPortfolio(); refreshTimer=setInterval(loadPortfolio,60000); }
+    if (view==='trade')       { loadTrade(); }
+    if (view==='futures')     { loadFutures(); }
+    if (view==='leaderboard') { loadLeaderboard(); }
+    if (view==='history')     { loadHistory(); }
+    if (view==='admin')       { loadAdmin(); }
   }
 
-  // ── Auth ─────────────────────────────────────────────────────────────────
+  function enterGame(game) {
+    currentGameId = game.id;
+    currentGame   = { ...game, markets: Array.isArray(game.markets) ? game.markets : JSON.parse(game.markets) };
+    document.getElementById('nav-game-context').style.display = 'flex';
+    document.getElementById('nav-game-name').textContent      = game.title;
+    document.getElementById('nav-portfolio').style.display    = '';
+    document.getElementById('nav-trade').style.display        = '';
+    document.getElementById('nav-leaderboard').style.display  = '';
+    document.getElementById('nav-history').style.display      = '';
+    if (currentGame.allow_futures) document.getElementById('nav-futures').style.display = '';
+    updateBanner();
+    navigate('portfolio');
+  }
+
+  function exitGame() {
+    clearInterval(refreshTimer);
+    currentGameId = null; currentGame = null; portfolio = null;
+    currentSymbol = null; currentQuote = null; selectedFutures = null;
+    document.getElementById('nav-game-context').style.display = 'none';
+    document.getElementById('nav-game-name').textContent      = '';
+    ['portfolio','trade','futures','leaderboard','history'].forEach(v =>
+      document.getElementById(`nav-${v}`).style.display = 'none');
+    document.getElementById('game-banner').className = '';
+    navigate('games');
+  }
+
+  // ── Auth ───────────────────────────────────────────────────────────────────
   function switchAuthTab(tab) {
-    document.querySelectorAll('.auth-tab').forEach((b, i) => b.classList.toggle('active', (i === 0) === (tab === 'login')));
-    document.getElementById('form-login').style.display    = tab === 'login' ? '' : 'none';
-    document.getElementById('form-register').style.display = tab === 'register' ? '' : 'none';
+    document.querySelectorAll('.auth-tab').forEach((b,i) => b.classList.toggle('active',(i===0)===(tab==='login')));
+    document.getElementById('form-login').style.display    = tab==='login' ? '' : 'none';
+    document.getElementById('form-register').style.display = tab==='register' ? '' : 'none';
   }
 
   async function login() {
-    const username = document.getElementById('login-username').value.trim();
-    const password = document.getElementById('login-password').value;
     document.getElementById('login-error').textContent = '';
     try {
-      const data = await api('POST', '/api/auth/login', { username, password });
-      token = data.token;
-      user  = data.user;
-      localStorage.setItem('sa_token', token);
-      showApp();
-    } catch (err) {
-      document.getElementById('login-error').textContent = err.message;
-    }
+      const d = await api('POST','/api/auth/login',{ username:document.getElementById('login-username').value.trim(), password:document.getElementById('login-password').value });
+      token=d.token; user=d.user; localStorage.setItem('sa_token',token); showApp();
+    } catch(err) { document.getElementById('login-error').textContent=err.message; }
   }
 
   async function register() {
-    const username = document.getElementById('reg-username').value.trim();
-    const email    = document.getElementById('reg-email').value.trim();
-    const password = document.getElementById('reg-password').value;
     document.getElementById('reg-error').textContent = '';
     try {
-      const data = await api('POST', '/api/auth/register', { username, email, password });
-      token = data.token;
-      user  = data.user;
-      localStorage.setItem('sa_token', token);
-      showApp();
-    } catch (err) {
-      document.getElementById('reg-error').textContent = err.message;
-    }
+      const d = await api('POST','/api/auth/register',{ username:document.getElementById('reg-username').value.trim(), email:document.getElementById('reg-email').value.trim(), password:document.getElementById('reg-password').value });
+      token=d.token; user=d.user; localStorage.setItem('sa_token',token); showApp();
+    } catch(err) { document.getElementById('reg-error').textContent=err.message; }
   }
 
   function logout() {
-    token = null; user = null; game = null; portfolio = null;
-    localStorage.removeItem('sa_token');
-    clearInterval(refreshTimer);
-    document.getElementById('app-shell').style.display = 'none';
-    document.getElementById('auth-shell').style.display = 'flex';
+    token=null; user=null; exitGame();
+    localStorage.removeItem('sa_token'); clearInterval(refreshTimer);
+    document.getElementById('app-shell').style.display='none';
+    document.getElementById('auth-shell').style.display='flex';
     switchAuthTab('login');
   }
 
-  async function showApp() {
-    document.getElementById('auth-shell').style.display = 'none';
-    document.getElementById('app-shell').style.display  = 'flex';
-    document.getElementById('nav-username').textContent = user.username;
-    if (user.is_admin) {
-      document.getElementById('nav-admin').style.display      = '';
-      document.getElementById('nav-admin-badge').style.display = '';
-    }
-    try { game = await api('GET', '/api/game/config'); } catch {}
-    updateBanner();
-    navigate('dashboard');
+  function showApp() {
+    document.getElementById('auth-shell').style.display='none';
+    document.getElementById('app-shell').style.display='flex';
+    document.getElementById('nav-username').textContent=user.username;
+    if (user.is_admin) { document.getElementById('nav-admin').style.display=''; document.getElementById('nav-admin-badge').style.display=''; }
+    navigate('games');
   }
 
-  // ── Dashboard ────────────────────────────────────────────────────────────
-  async function loadDashboard() {
+  // ── Games Lobby ────────────────────────────────────────────────────────────
+  async function loadGames() {
     try {
-      const data = await api('GET', '/api/portfolio');
+      const games = await api('GET','/api/games');
+      const list  = document.getElementById('games-list');
+      const empty = document.getElementById('games-empty');
+      if (!games.length) { list.innerHTML=''; empty.style.display=''; return; }
+      empty.style.display='none';
+      list.innerHTML = games.map(g => {
+        const statusBadge = `<span class="badge-status badge-${g.status}">${g.status.toUpperCase()}</span>`;
+        const markets = (g.markets||[]).join(', ');
+        const futures = g.allow_futures ? '<span class="game-tag">Futures enabled</span>' : '';
+        const canJoin = g.status !== 'ended';
+        const btnLabel = g.user_joined ? 'Enter Game' : (canJoin ? 'Join &amp; Enter' : 'View Results');
+        const btnClass = g.user_joined ? 'btn-primary' : (canJoin ? 'btn-green' : 'btn-ghost');
+        return `<div class="game-card">
+          <div class="game-card-header"><div class="game-card-title">${g.title}</div>${statusBadge}</div>
+          <div class="game-card-meta">
+            <span>📅 ${fmtDateShort(g.start_date)} → ${fmtDateShort(g.end_date)}</span>
+            <span>💵 Starting cash: <strong>${fmt$(g.starting_cash,0)}</strong></span>
+            <span>📊 Markets: ${markets}</span>
+            <span>👥 ${g.player_count} player${g.player_count!==1?'s':''}</span>
+          </div>
+          <div class="game-card-footer">
+            <div style="display:flex;gap:6px;flex-wrap:wrap">${futures}</div>
+            <button class="btn btn-sm ${btnClass}" onclick="App.joinAndEnter(${g.id})">${btnLabel}</button>
+          </div>
+        </div>`;
+      }).join('');
+    } catch(err) { console.error(err); }
+  }
+
+  async function joinAndEnter(gameId) {
+    try {
+      const gameData = await api('GET',`/api/games/${gameId}`);
+      if (!gameData.user_joined && gameData.status !== 'ended') {
+        await api('POST',`/api/games/${gameId}/join`);
+        toast(`Joined "${gameData.title}"!`, 'success');
+      }
+      enterGame(gameData);
+    } catch(err) { toast(err.message,'error'); }
+  }
+
+  // ── Portfolio ──────────────────────────────────────────────────────────────
+  async function loadPortfolio() {
+    if (!currentGameId) return;
+    try {
+      const data = await api('GET',`/api/games/${currentGameId}/portfolio`);
       portfolio = data;
-      game = data.game;
+      currentGame = data.game;
       updateBanner();
 
-      if (!game) {
-        document.getElementById('dash-no-game').style.display = '';
-        document.getElementById('dash-content').style.display = 'none';
-        return;
-      }
-      document.getElementById('dash-no-game').style.display  = 'none';
-      document.getElementById('dash-content').style.display  = '';
-
-      const gain    = data.total_value - game.starting_cash;
-      const gainPct = (gain / game.starting_cash) * 100;
-
+      const gain    = data.total_value - data.game.starting_cash;
+      const gainPct = (gain / data.game.starting_cash) * 100;
       document.getElementById('dash-stats').innerHTML = `
-        <div class="card">
-          <div class="card-title">Total Portfolio</div>
-          <div class="card-value">${fmt$(data.total_value)}</div>
-          <div class="card-sub ${colorClass(gain)}">${gain >= 0 ? '+' : '-'}${fmt$(Math.abs(gain))} (${fmtPct(gainPct)})</div>
-        </div>
-        <div class="card">
-          <div class="card-title">Cash Available</div>
-          <div class="card-value">${fmt$(data.cash_balance)}</div>
-          <div class="card-sub">of ${fmt$(game.starting_cash)} starting cash</div>
-        </div>
-        <div class="card">
-          <div class="card-title">Stock Value</div>
-          <div class="card-value">${fmt$(data.stock_value)}</div>
-          <div class="card-sub">${data.holdings.length} position${data.holdings.length !== 1 ? 's' : ''}</div>
-        </div>
-        <div class="card">
-          <div class="card-title">Overall Gain/Loss</div>
-          <div class="card-value ${colorClass(gain)}">${gain >= 0 ? '+' : ''}${fmt$(gain)}</div>
-          <div class="card-sub ${colorClass(gainPct)}">${fmtPct(gainPct)}</div>
-        </div>
+        <div class="card"><div class="card-title">Total Portfolio</div><div class="card-value">${fmt$(data.total_value)}</div><div class="card-sub ${colorClass(gain)}">${gain>=0?'+':'−'}${fmt$(Math.abs(gain))} (${fmtPct(gainPct)})</div></div>
+        <div class="card"><div class="card-title">Cash Available</div><div class="card-value">${fmt$(data.cash_balance)}</div><div class="card-sub">of ${fmt$(data.game.starting_cash,0)} starting</div></div>
+        <div class="card"><div class="card-title">Stock Value</div><div class="card-value">${fmt$(data.stock_value)}</div><div class="card-sub">${data.holdings.length} position${data.holdings.length!==1?'s':''}</div></div>
+        ${data.game.allow_futures ? `<div class="card"><div class="card-title">Futures P&L</div><div class="card-value ${colorClass(data.futures_pnl)}">${data.futures_pnl>=0?'+':''}${fmt$(data.futures_pnl)}</div><div class="card-sub">${(data.futures_positions||[]).length} open</div></div>` : ''}
       `;
-
-      document.getElementById('dash-updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+      document.getElementById('dash-updated').textContent = 'Updated '+new Date().toLocaleTimeString();
       document.getElementById('holdings-count').textContent = data.holdings.length;
 
       const tbody = document.getElementById('holdings-body');
       if (!data.holdings.length) {
-        tbody.innerHTML = '';
-        document.getElementById('holdings-empty').style.display = '';
-        document.getElementById('holdings-table').style.display = 'none';
+        tbody.innerHTML=''; document.getElementById('holdings-empty').style.display=''; document.getElementById('holdings-table').style.display='none';
       } else {
-        document.getElementById('holdings-empty').style.display = 'none';
-        document.getElementById('holdings-table').style.display = '';
-        tbody.innerHTML = data.holdings.map(h => `
-          <tr>
-            <td><strong>${h.symbol}</strong></td>
-            <td class="muted" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h.company_name || '—'}</td>
-            <td class="text-right">${fmtShares(h.shares)}</td>
-            <td class="text-right muted">${fmt$(h.avg_cost)}</td>
-            <td class="text-right">${fmt$(h.current_price)}</td>
-            <td class="text-right">${fmt$(h.market_value)}</td>
-            <td class="text-right ${colorClass(h.gain_loss)}">
-              ${h.gain_loss >= 0 ? '+' : ''}${fmt$(h.gain_loss)}<br>
-              <span style="font-size:11px">${fmtPct(h.gain_loss_pct)}</span>
-            </td>
-            <td>
-              <div style="display:flex;gap:6px;justify-content:flex-end">
-                <button class="btn btn-green btn-sm" onclick="App.loadQuoteForSymbol('${h.symbol}')">Buy</button>
-                <button class="btn btn-red btn-sm" onclick="App.openSellModal('${h.symbol}',${h.shares},${h.current_price},'${(h.company_name||'').replace(/'/g,"\\'")}')">Sell</button>
-              </div>
-            </td>
-          </tr>
-        `).join('');
+        document.getElementById('holdings-empty').style.display='none'; document.getElementById('holdings-table').style.display='';
+        tbody.innerHTML = data.holdings.map(h => `<tr>
+          <td><strong>${h.symbol}</strong></td>
+          <td class="muted" style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h.company_name||'—'}</td>
+          <td class="text-right">${fmtShares(h.shares)}</td>
+          <td class="text-right muted">${fmt$(h.avg_cost)}</td>
+          <td class="text-right">${fmt$(h.current_price)}</td>
+          <td class="text-right">${fmt$(h.market_value)}</td>
+          <td class="text-right ${colorClass(h.gain_loss)}">${h.gain_loss>=0?'+':''}${fmt$(h.gain_loss)}<br><span style="font-size:11px">${fmtPct(h.gain_loss_pct)}</span></td>
+          <td><div style="display:flex;gap:5px;justify-content:flex-end">
+            <button class="btn btn-green btn-sm" onclick="App.loadQuoteForSymbol('${h.symbol}')">Buy</button>
+            <button class="btn btn-red btn-sm" onclick="App.openSellModal('${h.symbol}',${h.shares},${h.current_price},'${(h.company_name||'').replace(/'/g,"\\'")}')">Sell</button>
+          </div></td>
+        </tr>`).join('');
       }
-    } catch (err) {
-      console.error('Dashboard error:', err);
+
+      // Futures positions
+      const fp = data.futures_positions || [];
+      const fCard = document.getElementById('futures-positions-card');
+      if (data.game.allow_futures) {
+        fCard.style.display='';
+        document.getElementById('futures-count').textContent = fp.length;
+        const ftbody = document.getElementById('futures-body');
+        if (!fp.length) {
+          ftbody.innerHTML=''; document.getElementById('futures-empty').style.display=''; document.getElementById('futures-table').style.display='none';
+        } else {
+          document.getElementById('futures-empty').style.display='none'; document.getElementById('futures-table').style.display='';
+          ftbody.innerHTML = fp.map(f => `<tr>
+            <td><strong>${f.symbol}</strong></td>
+            <td class="muted">${f.name||'—'}</td>
+            <td><span class="pill pill-${f.direction}">${f.direction.toUpperCase()}</span></td>
+            <td class="text-right">${fmtShares(f.contracts)}</td>
+            <td class="text-right muted">${fmt$(f.entry_price)}</td>
+            <td class="text-right">${fmt$(f.current_price)}</td>
+            <td class="text-right ${colorClass(f.unrealized_pnl)}">${f.unrealized_pnl>=0?'+':''}${fmt$(f.unrealized_pnl)}</td>
+            <td class="text-right">${fmt$(f.margin_held)}</td>
+            <td><button class="btn btn-red btn-sm" onclick="App.openCloseFuturesModal('${f.symbol}',${f.contracts},${f.entry_price},'${f.direction}',${f.margin_held},${f.current_price||f.entry_price},'${f.name||f.symbol}')">Close</button></td>
+          </tr>`).join('');
+        }
+      } else { fCard.style.display='none'; }
+
+    } catch(err) {
+      if (err.message === 'not_joined') { toast('Join this game first','info'); exitGame(); }
+      else console.error(err);
     }
   }
 
-  // ── Trade ─────────────────────────────────────────────────────────────────
+  // ── Trade ──────────────────────────────────────────────────────────────────
   async function loadTrade() {
-    try {
-      game = await api('GET', '/api/game/config');
-      updateBanner();
-    } catch {}
-    if (!game) {
-      document.getElementById('trade-no-game').style.display = '';
-    } else {
-      document.getElementById('trade-no-game').style.display = 'none';
-    }
+    if (!currentGameId) return;
+    try { currentGame = await api('GET',`/api/games/${currentGameId}`); updateBanner(); } catch {}
     updateTradeCash();
   }
 
   function updateTradeCash() {
-    const cash = portfolio?.cash_balance ?? 0;
-    document.getElementById('trade-cash').textContent = fmt$(cash);
+    document.getElementById('trade-cash').textContent = fmt$(portfolio?.cash_balance ?? 0);
   }
 
-  let searchAbort = null;
   function onSearchInput(val) {
     clearTimeout(searchTimer);
     const dd = document.getElementById('search-dropdown');
-    if (!val || val.length < 1) { dd.style.display = 'none'; return; }
-    dd.innerHTML = '<div class="search-item"><span class="muted">Searching…</span></div>';
-    dd.style.display = 'block';
-    searchTimer = setTimeout(() => searchStocks(val), 300);
+    if (!val || val.length<1) { dd.style.display='none'; return; }
+    dd.innerHTML='<div class="search-item"><span class="muted">Searching…</span></div>'; dd.style.display='block';
+    searchTimer = setTimeout(() => doSearch(val), 320);
   }
+  function onSearchFocus() { const v=document.getElementById('stock-search').value; if(v.length>=1) doSearch(v); }
 
-  function onSearchFocus() {
-    const val = document.getElementById('stock-search').value;
-    if (val.length >= 1) searchStocks(val);
-  }
-
-  async function searchStocks(q) {
+  async function doSearch(q) {
     const dd = document.getElementById('search-dropdown');
     try {
-      const results = await api('GET', `/api/stocks/search?q=${encodeURIComponent(q)}`);
-      if (!results.length) {
-        dd.innerHTML = '<div class="search-item muted">No results found</div>';
-        dd.style.display = 'block';
-        return;
-      }
-      dd.innerHTML = results.map(r => `
-        <div class="search-item" onclick="App.selectStock('${r.symbol}')">
-          <div>
-            <div class="search-sym">${r.symbol}</div>
-            <div class="search-name">${r.name || ''}</div>
-          </div>
-          <div class="search-exch">${r.exchange || ''}</div>
-        </div>
-      `).join('');
-      dd.style.display = 'block';
-    } catch (err) {
-      dd.innerHTML = `<div class="search-item" style="color:var(--red)">Search error: ${err.message}</div>`;
-      dd.style.display = 'block';
-    }
+      const r = await api('GET',`/api/stocks/search?q=${encodeURIComponent(q)}`);
+      if (!r.length) { dd.innerHTML='<div class="search-item muted">No results</div>'; dd.style.display='block'; return; }
+      dd.innerHTML = r.map(s=>`<div class="search-item" onclick="App.selectStock('${s.symbol}')"><div><div class="search-sym">${s.symbol}</div><div class="search-name">${s.name||''}</div></div><div class="search-exch">${s.exchange||''}</div></div>`).join('');
+      dd.style.display='block';
+    } catch(err) { dd.innerHTML=`<div class="search-item" style="color:var(--red)">${err.message}</div>`; dd.style.display='block'; }
   }
 
   async function selectStock(symbol) {
-    document.getElementById('search-dropdown').style.display = 'none';
-    document.getElementById('stock-search').value = symbol;
+    document.getElementById('search-dropdown').style.display='none';
+    document.getElementById('stock-search').value=symbol;
     await loadQuoteForSymbol(symbol);
   }
 
   async function loadQuoteForSymbol(symbol) {
     navigate('trade');
     currentSymbol = symbol.toUpperCase();
-    document.getElementById('trade-form-card').style.display = 'none';
-    document.getElementById('trade-select-hint').style.display = 'none';
-    document.getElementById('quote-card').style.display = '';
-    document.getElementById('stock-search').value = symbol;
-
-    document.getElementById('q-symbol').textContent = symbol;
-    document.getElementById('q-name').textContent = 'Loading…';
-    document.getElementById('q-price').textContent = '…';
-    document.getElementById('q-change').textContent = '';
-
+    document.getElementById('quote-card').style.display='';
+    document.getElementById('trade-select-hint').style.display='none';
+    document.getElementById('trade-form-card').style.display='none';
+    document.getElementById('stock-search').value=symbol;
+    document.getElementById('q-symbol').textContent=symbol; document.getElementById('q-name').textContent='Loading…'; document.getElementById('q-price').textContent='…';
     try {
-      const q = await api('GET', `/api/stocks/quote/${symbol}`);
+      const q = await api('GET',`/api/stocks/quote/${symbol}`);
       currentQuote = q;
-      document.getElementById('q-symbol').textContent = q.symbol;
-      document.getElementById('q-name').textContent   = q.name;
-      document.getElementById('q-exchange').textContent = `${q.exchange} · ${q.marketState}`;
-      document.getElementById('q-price').textContent  = fmt$(q.price);
-      const chEl = document.getElementById('q-change');
-      chEl.textContent = `${q.change >= 0 ? '+' : ''}${fmt$(q.change)} (${fmtPct(q.changePercent)})`;
-      chEl.className   = 'quote-change ' + colorClass(q.change);
-      document.getElementById('q-open').textContent = fmt$(q.open);
-      document.getElementById('q-high').textContent = fmt$(q.high);
-      document.getElementById('q-low').textContent  = fmt$(q.low);
-      document.getElementById('q-vol').textContent  = fmtVol(q.volume);
-
-      // Show chart
+      document.getElementById('q-symbol').textContent=q.symbol;
+      document.getElementById('q-name').textContent=q.name;
+      document.getElementById('q-exchange').textContent=`${q.exchange} · ${q.marketState}`;
+      document.getElementById('q-price').textContent=fmt$(q.price);
+      const chEl=document.getElementById('q-change');
+      chEl.textContent=`${q.change>=0?'+':''}${fmt$(q.change)} (${fmtPct(q.changePercent)})`; chEl.className='quote-change '+colorClass(q.change);
+      document.getElementById('q-open').textContent=fmt$(q.open); document.getElementById('q-high').textContent=fmt$(q.high);
+      document.getElementById('q-low').textContent=fmt$(q.low);   document.getElementById('q-vol').textContent=fmtVol(q.volume);
       loadChart(symbol);
-
-      // Show holding info
-      const holding = portfolio?.holdings?.find(h => h.symbol === symbol);
-      const holdingEl = document.getElementById('current-holding');
-      if (holding && holding.shares > 0) {
-        holdingEl.style.display = '';
-        document.getElementById('holding-info').innerHTML =
-          `You own <strong>${fmtShares(holding.shares)}</strong> share(s) · avg cost <strong>${fmt$(holding.avg_cost)}</strong>`;
-      } else {
-        holdingEl.style.display = 'none';
-      }
-
-      // Always show the trade form — server enforces game status on submission
-      document.getElementById('trade-form-card').style.display = '';
-      // Show a notice if trading is blocked
-      const statusNotice = document.getElementById('trade-status-notice');
-      if (!game) {
-        statusNotice.textContent = 'No active game — trades will be rejected until an admin sets one up.';
-        statusNotice.style.display = '';
-      } else if (game.status === 'pending') {
-        statusNotice.textContent = `Game starts on ${new Date(game.start_date + 'T00:00:00').toLocaleDateString()} — trading not yet open.`;
-        statusNotice.style.display = '';
-      } else if (game.status === 'ended') {
-        statusNotice.textContent = 'Game has ended — no new trades are allowed.';
-        statusNotice.style.display = '';
-      } else {
-        statusNotice.style.display = 'none';
-      }
-      document.getElementById('trade-error').textContent = '';
-      document.getElementById('trade-shares').value = '';
-      updateTradeTotal();
-      setTradeType(tradeType);
-
-    } catch (err) {
-      document.getElementById('q-name').textContent = 'Error: ' + err.message;
-    }
+      // Holding badge
+      const h=portfolio?.holdings?.find(x=>x.symbol===symbol); const hEl=document.getElementById('current-holding');
+      if(h&&h.shares>0){hEl.style.display='';document.getElementById('holding-info').innerHTML=`You own <strong>${fmtShares(h.shares)}</strong> share(s) · avg <strong>${fmt$(h.avg_cost)}</strong>`;}else{hEl.style.display='none';}
+      // Status notice
+      const notice=document.getElementById('trade-status-notice');
+      if(!currentGame){notice.textContent='No active game loaded.';notice.style.display='';}
+      else if(currentGame.status==='pending'){notice.textContent=`Game starts ${fmtDateShort(currentGame.start_date)} — trading not open yet.`;notice.style.display='';}
+      else if(currentGame.status==='ended'){notice.textContent='Game has ended — no new trades.';notice.style.display='';}
+      else{notice.style.display='none';}
+      document.getElementById('trade-form-card').style.display='';
+      document.getElementById('trade-error').textContent=''; document.getElementById('trade-shares').value='';
+      updateTradeTotal(); setTradeType(tradeType);
+    } catch(err) { document.getElementById('q-name').textContent='Error: '+err.message; }
   }
 
   async function loadChart(symbol) {
-    const container = document.getElementById('chart-container');
-    container.innerHTML = '<div class="muted" style="text-align:center;padding:20px;font-size:12px">Loading chart…</div>';
-    try {
-      const data = await api('GET', `/api/stocks/chart/${symbol}`);
-      container.innerHTML = renderSparkline(data, container.clientWidth || 480, 90);
-    } catch {
-      container.innerHTML = '<div class="muted" style="text-align:center;padding:20px;font-size:12px">Chart unavailable</div>';
-    }
+    const c=document.getElementById('chart-container'); c.innerHTML='<div class="muted" style="text-align:center;padding:14px;font-size:11px">Loading…</div>';
+    try { const d=await api('GET',`/api/stocks/chart/${symbol}`); c.innerHTML=renderSparkline(d,c.clientWidth||460,80); }
+    catch { c.innerHTML='<div class="muted" style="text-align:center;padding:14px;font-size:11px">Chart unavailable</div>'; }
   }
 
-  function renderSparkline(data, width, height) {
-    if (!data || data.length < 2) return '<div class="muted" style="text-align:center;padding:20px;font-size:12px">No chart data</div>';
-    const prices = data.map(d => d.close).filter(Boolean);
-    if (prices.length < 2) return '';
-    const min = Math.min(...prices);
-    const max = Math.max(...prices);
-    const range = max - min || 1;
-    const pad = 4;
-    const w = width - pad * 2;
-    const h = height - pad * 2;
-    const pts = prices.map((p, i) => {
-      const x = pad + (i / (prices.length - 1)) * w;
-      const y = pad + h - ((p - min) / range) * h;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    }).join(' ');
-    const isUp = prices[prices.length - 1] >= prices[0];
-    const color = isUp ? '#22c55e' : '#ef4444';
-    const fillPts = `${pad},${pad + h} ${pts} ${pad + w},${pad + h}`;
-    const startDate = data[0]?.date ? new Date(data[0].date).toLocaleDateString() : '';
-    const endDate   = data[data.length - 1]?.date ? new Date(data[data.length - 1].date).toLocaleDateString() : '';
-    return `
-      <svg width="100%" height="${height}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
-        <defs>
-          <linearGradient id="cg" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="${color}" stop-opacity="0.3"/>
-            <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
-          </linearGradient>
-        </defs>
-        <polygon points="${fillPts}" fill="url(#cg)"/>
-        <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.8"/>
-      </svg>
-      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);padding:0 4px;margin-top:2px">
-        <span>${startDate}</span><span>30-day</span><span>${endDate}</span>
-      </div>
-    `;
+  function renderSparkline(data,width,height) {
+    if(!data||data.length<2) return '<div class="muted" style="text-align:center;padding:14px;font-size:11px">No chart data</div>';
+    const prices=data.map(d=>d.close).filter(Boolean); if(prices.length<2) return '';
+    const min=Math.min(...prices),max=Math.max(...prices),range=max-min||1,pad=4,w=width-pad*2,h=height-pad*2;
+    const pts=prices.map((p,i)=>`${(pad+(i/(prices.length-1))*w).toFixed(1)},${(pad+h-((p-min)/range)*h).toFixed(1)}`).join(' ');
+    const isUp=prices[prices.length-1]>=prices[0],color=isUp?'#22c55e':'#ef4444';
+    const fill=`${pad},${pad+h} ${pts} ${pad+w},${pad+h}`;
+    const s0=data[0]?.date?new Date(data[0].date).toLocaleDateString():'',se=data[data.length-1]?.date?new Date(data[data.length-1].date).toLocaleDateString():'';
+    return `<svg width="100%" height="${height}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none"><defs><linearGradient id="cg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${color}" stop-opacity=".3"/><stop offset="100%" stop-color="${color}" stop-opacity="0"/></linearGradient></defs><polygon points="${fill}" fill="url(#cg)"/><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.8"/></svg><div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);padding:2px 4px"><span>${s0}</span><span>30-day</span><span>${se}</span></div>`;
   }
 
   function setTradeType(type) {
-    tradeType = type;
-    document.querySelectorAll('.trade-tab').forEach(b => {
-      b.classList.toggle('active', b.classList.contains(type));
-    });
-    const btn = document.getElementById('trade-submit-btn');
-    const label = document.getElementById('trade-submit-label');
-    if (type === 'buy') {
-      btn.className = 'btn btn-full btn-green';
-      label.textContent = 'Buy';
-      document.getElementById('max-btn').textContent = 'Max';
-    } else {
-      btn.className = 'btn btn-full btn-red';
-      label.textContent = 'Sell';
-      document.getElementById('max-btn').textContent = 'Sell All';
-    }
+    tradeType=type;
+    document.querySelectorAll('.trade-tab').forEach(b=>b.classList.toggle('active',b.classList.contains(type)));
+    const btn=document.getElementById('trade-submit-btn'),lbl=document.getElementById('trade-submit-label'),mb=document.getElementById('max-btn');
+    if(type==='buy'){btn.className='btn btn-full btn-green';lbl.textContent='Buy';mb.textContent='Max';}
+    else{btn.className='btn btn-full btn-red';lbl.textContent='Sell';mb.textContent='Sell All';}
     updateTradeTotal();
   }
 
   function updateTradeTotal() {
-    const shares = parseFloat(document.getElementById('trade-shares').value) || 0;
-    const price  = currentQuote?.price || 0;
-    const total  = shares * price;
-    document.getElementById('trade-total').textContent = fmt$(total);
-    updateTradeCash();
+    const s=parseFloat(document.getElementById('trade-shares').value)||0,p=currentQuote?.price||0;
+    document.getElementById('trade-total').textContent=fmt$(s*p); updateTradeCash();
   }
 
   function setMaxShares() {
-    if (!currentQuote) return;
-    if (tradeType === 'buy') {
-      const cash = portfolio?.cash_balance || 0;
-      const maxShares = cash / currentQuote.price;
-      document.getElementById('trade-shares').value = Math.floor(maxShares * 10000) / 10000;
-    } else {
-      const holding = portfolio?.holdings?.find(h => h.symbol === currentSymbol);
-      document.getElementById('trade-shares').value = holding ? holding.shares : 0;
-    }
+    if(!currentQuote) return;
+    if(tradeType==='buy'){document.getElementById('trade-shares').value=Math.floor((portfolio?.cash_balance||0)/currentQuote.price*10000)/10000;}
+    else{const h=portfolio?.holdings?.find(x=>x.symbol===currentSymbol);document.getElementById('trade-shares').value=h?h.shares:0;}
     updateTradeTotal();
   }
 
   async function executeTrade() {
-    const shares = parseFloat(document.getElementById('trade-shares').value);
-    const errEl  = document.getElementById('trade-error');
-    errEl.textContent = '';
-
-    if (!currentSymbol)      { errEl.textContent = 'No stock selected.'; return; }
-    if (!shares || shares <= 0) { errEl.textContent = 'Enter a valid number of shares.'; return; }
-
-    const btn = document.getElementById('trade-submit-btn');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span>';
-
+    const shares=parseFloat(document.getElementById('trade-shares').value),errEl=document.getElementById('trade-error');
+    errEl.textContent='';
+    if(!currentSymbol){errEl.textContent='No stock selected.';return;}
+    if(!shares||shares<=0){errEl.textContent='Enter a valid share quantity.';return;}
+    if(!currentGameId){errEl.textContent='No game selected.';return;}
+    const btn=document.getElementById('trade-submit-btn'); btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
     try {
-      const result = await api('POST', `/api/trades/${tradeType}`, { symbol: currentSymbol, shares });
-      toast(result.message, 'success');
-      // Refresh portfolio & UI
-      const pData = await api('GET', '/api/portfolio');
-      portfolio = pData;
-      updateTradeCash();
-      const holding = portfolio?.holdings?.find(h => h.symbol === currentSymbol);
-      const holdingEl = document.getElementById('current-holding');
-      if (holding && holding.shares > 0) {
-        holdingEl.style.display = '';
-        document.getElementById('holding-info').innerHTML =
-          `You own <strong>${fmtShares(holding.shares)}</strong> share(s) · avg cost <strong>${fmt$(holding.avg_cost)}</strong>`;
-      } else {
-        holdingEl.style.display = 'none';
-      }
-      document.getElementById('trade-shares').value = '';
-      updateTradeTotal();
-    } catch (err) {
-      errEl.textContent = err.message;
-    } finally {
-      btn.disabled = false;
-      setTradeType(tradeType);
-    }
+      const r=await api('POST',`/api/games/${currentGameId}/trades/${tradeType}`,{symbol:currentSymbol,shares});
+      toast(r.message,'success');
+      const pd=await api('GET',`/api/games/${currentGameId}/portfolio`); portfolio=pd; updateTradeCash();
+      const h=portfolio?.holdings?.find(x=>x.symbol===currentSymbol),hEl=document.getElementById('current-holding');
+      if(h&&h.shares>0){hEl.style.display='';document.getElementById('holding-info').innerHTML=`You own <strong>${fmtShares(h.shares)}</strong> share(s) · avg <strong>${fmt$(h.avg_cost)}</strong>`;}else{hEl.style.display='none';}
+      document.getElementById('trade-shares').value=''; updateTradeTotal();
+    } catch(err){errEl.textContent=err.message;}
+    finally{btn.disabled=false;setTradeType(tradeType);}
   }
 
-  // ── Leaderboard ───────────────────────────────────────────────────────────
+  // ── Futures ────────────────────────────────────────────────────────────────
+  let allContracts=[], activeCategory='All';
+
+  async function loadFutures() {
+    if(!currentGameId||!currentGame?.allow_futures) return;
+    document.getElementById('futures-margin-rate').textContent=`${Math.round((currentGame.futures_margin||0.2)*100)}% margin`;
+    document.getElementById('ft-cash').textContent=fmt$(portfolio?.cash_balance??0);
+    try {
+      allContracts = await api('GET','/api/futures/contracts');
+      renderFuturesCats(); renderFuturesGrid('All');
+    } catch(err){ console.error(err); }
+  }
+
+  function renderFuturesCats() {
+    const cats=['All',...new Set(allContracts.map(c=>c.category))];
+    document.getElementById('futures-cat-tabs').innerHTML=cats.map(c=>`<button class="futures-cat-btn${c==='All'?'active':''}" onclick="App.filterFutures('${c}')">${c}</button>`).join('');
+  }
+
+  function filterFutures(cat) {
+    activeCategory=cat;
+    document.querySelectorAll('.futures-cat-btn').forEach(b=>b.classList.toggle('active',b.textContent===cat));
+    renderFuturesGrid(cat);
+  }
+
+  function renderFuturesGrid(cat) {
+    const list=cat==='All'?allContracts:allContracts.filter(c=>c.category===cat);
+    document.getElementById('futures-contracts-grid').innerHTML=list.map(c=>`<div class="futures-card${selectedFutures?.symbol===c.symbol?' selected':''}" onclick="App.selectFutures('${c.symbol}')">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start"><div><div class="futures-card-sym">${c.symbol}</div><div class="futures-card-name">${c.name}</div></div><span style="font-size:10px;color:var(--muted)">${c.category}</span></div>
+      <div class="futures-card-price ${c.price!=null?colorClass(c.change):'muted'}">${c.price!=null?fmt$(c.price):'—'}</div>
+      <div class="futures-card-change ${colorClass(c.change)}">${c.price!=null?fmtPct(c.changePercent):''}</div>
+    </div>`).join('');
+  }
+
+  function selectFutures(symbol) {
+    selectedFutures=allContracts.find(c=>c.symbol===symbol);
+    if(!selectedFutures) return;
+    renderFuturesGrid(activeCategory);
+    document.getElementById('futures-trade-panel').style.display='';
+    document.getElementById('ft-symbol').textContent=selectedFutures.symbol;
+    document.getElementById('ft-name').textContent=selectedFutures.name;
+    document.getElementById('ft-desc').textContent=selectedFutures.description||'';
+    const pr=selectedFutures.price;
+    document.getElementById('ft-price').textContent=pr!=null?fmt$(pr):'Price unavailable';
+    const chEl=document.getElementById('ft-change');
+    chEl.textContent=pr!=null?`${selectedFutures.change>=0?'+':''}${fmt$(selectedFutures.change)} (${fmtPct(selectedFutures.changePercent)})`:'';
+    chEl.className=colorClass(selectedFutures.change);
+    // Show existing position warning
+    const openEl=document.getElementById('ft-open-pos');
+    const pos=portfolio?.futures_positions?.find(p=>p.symbol===symbol&&p.contracts>0);
+    if(pos){openEl.style.display='';openEl.innerHTML=`You have an open <strong>${pos.direction.toUpperCase()}</strong> position: ${fmtShares(pos.contracts)} contract(s) at entry $${fmt$(pos.entry_price)} · Unrealized P&L: <strong class="${colorClass(pos.unrealized_pnl)}">${pos.unrealized_pnl>=0?'+':''}${fmt$(pos.unrealized_pnl)}</strong>`;}
+    else{openEl.style.display='none';}
+    document.getElementById('ft-contracts').value='';
+    updateFuturesTotal();
+    setFuturesDir(futuresDir);
+    document.getElementById('ft-cash').textContent=fmt$(portfolio?.cash_balance??0);
+  }
+
+  function setFuturesDir(dir) {
+    futuresDir=dir;
+    document.querySelectorAll('.dir-tab').forEach(b=>b.classList.toggle('active',b.classList.contains(dir)));
+    const lbl=document.getElementById('ft-submit-label');
+    lbl.textContent=dir==='long'?'Open Long (Buy)':'Open Short (Sell)';
+    document.getElementById('ft-submit-btn').className=`btn btn-full ${dir==='long'?'btn-green':'btn-red'}`;
+    updateFuturesTotal();
+  }
+
+  function updateFuturesTotal() {
+    const c=parseFloat(document.getElementById('ft-contracts').value)||0,p=selectedFutures?.price||0,m=currentGame?.futures_margin||0.2;
+    const margin=c*p*m,cash=portfolio?.cash_balance??0;
+    document.getElementById('ft-margin-needed').textContent=fmt$(margin);
+    document.getElementById('ft-cash-after').textContent=fmt$(cash-margin);
+    document.getElementById('ft-cash-after').className=cash-margin<0?'red':'';
+  }
+
+  function setMaxFuturesContracts() {
+    if(!selectedFutures?.price) return;
+    const cash=portfolio?.cash_balance||0,m=currentGame?.futures_margin||0.2;
+    document.getElementById('ft-contracts').value=Math.floor(cash/(selectedFutures.price*m)*100)/100;
+    updateFuturesTotal();
+  }
+
+  async function openFuturesPosition() {
+    const contracts=parseFloat(document.getElementById('ft-contracts').value),errEl=document.getElementById('futures-error');
+    errEl.textContent='';
+    if(!selectedFutures){errEl.textContent='Select a contract first.';return;}
+    if(!contracts||contracts<=0){errEl.textContent='Enter a valid number of contracts.';return;}
+    const btn=document.getElementById('ft-submit-btn'); btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
+    try {
+      const r=await api('POST',`/api/games/${currentGameId}/futures/open`,{symbol:selectedFutures.symbol,direction:futuresDir,contracts});
+      toast(r.message,'success');
+      const pd=await api('GET',`/api/games/${currentGameId}/portfolio`); portfolio=pd;
+      document.getElementById('ft-cash').textContent=fmt$(portfolio.cash_balance);
+      selectFutures(selectedFutures.symbol);
+    } catch(err){errEl.textContent=err.message;}
+    finally{btn.disabled=false;setFuturesDir(futuresDir);}
+  }
+
+  // ── Leaderboard ────────────────────────────────────────────────────────────
   async function loadLeaderboard() {
+    if(!currentGameId) return;
     try {
-      const rows = await api('GET', '/api/game/leaderboard');
-      const tbody = document.getElementById('leaderboard-body');
-      if (!rows.length) {
-        tbody.innerHTML = '';
-        document.getElementById('leaderboard-empty').style.display = '';
-        return;
-      }
-      document.getElementById('leaderboard-empty').style.display = 'none';
-      tbody.innerHTML = rows.map(r => `
-        <tr class="${r.rank <= 3 ? `rank-${r.rank}` : ''} ${r.username === user?.username ? 'rank-self' : ''}">
-          <td><strong>#${r.rank}</strong></td>
-          <td>${r.username}</td>
-          <td class="text-right">${fmt$(r.cash_balance)}</td>
-          <td class="text-right">${fmt$(r.stock_value)}</td>
-          <td class="text-right"><strong>${fmt$(r.total_value)}</strong></td>
-          <td class="text-right ${colorClass(r.gain)}">
-            ${r.gain >= 0 ? '+' : ''}${fmt$(r.gain)}<br>
-            <span style="font-size:11px">${fmtPct(r.gain_pct)}</span>
-          </td>
-        </tr>
-      `).join('');
-    } catch (err) {
-      console.error('Leaderboard error:', err);
-    }
+      const rows=await api('GET',`/api/games/${currentGameId}/leaderboard`);
+      const tbody=document.getElementById('leaderboard-body');
+      if(!rows.length){tbody.innerHTML='';document.getElementById('leaderboard-empty').style.display='';return;}
+      document.getElementById('leaderboard-empty').style.display='none';
+      tbody.innerHTML=rows.map(r=>`<tr class="${r.rank<=3?`rank-${r.rank}`:''} ${r.username===user?.username?'rank-self':''}">
+        <td><strong>#${r.rank}</strong></td><td>${r.username}</td>
+        <td class="text-right">${fmt$(r.cash_balance)}</td>
+        <td class="text-right">${fmt$(r.stock_value)}</td>
+        <td class="text-right ${colorClass(r.futures_pnl)}">${r.futures_pnl>=0?'+':''}${fmt$(r.futures_pnl)}</td>
+        <td class="text-right"><strong>${fmt$(r.total_value)}</strong></td>
+        <td class="text-right ${colorClass(r.gain)}">${r.gain>=0?'+':''}${fmt$(r.gain)}<br><span style="font-size:11px">${fmtPct(r.gain_pct)}</span></td>
+      </tr>`).join('');
+    } catch(err){console.error(err);}
   }
 
-  // ── History ───────────────────────────────────────────────────────────────
+  // ── History ────────────────────────────────────────────────────────────────
   async function loadHistory() {
+    if(!currentGameId) return;
     try {
-      const txns = await api('GET', '/api/trades/history');
-      const tbody = document.getElementById('history-body');
-      if (!txns.length) {
-        tbody.innerHTML = '';
-        document.getElementById('history-empty').style.display = '';
-        return;
-      }
-      document.getElementById('history-empty').style.display = 'none';
-      tbody.innerHTML = txns.map(t => `
-        <tr>
+      const [txns, ftxns] = await Promise.all([
+        api('GET',`/api/games/${currentGameId}/trades/history`),
+        currentGame?.allow_futures ? api('GET',`/api/games/${currentGameId}/futures/history`) : Promise.resolve([])
+      ]);
+      const tbody=document.getElementById('history-body');
+      if(!txns.length){tbody.innerHTML='';document.getElementById('history-empty').style.display='';}
+      else{document.getElementById('history-empty').style.display='none';
+        tbody.innerHTML=txns.map(t=>`<tr>
           <td class="muted">${fmtDate(t.executed_at)}</td>
           <td><span class="pill pill-${t.type}">${t.type.toUpperCase()}</span></td>
-          <td><strong>${t.symbol}</strong></td>
-          <td class="muted">${t.company_name || '—'}</td>
+          <td><strong>${t.symbol}</strong></td><td class="muted">${t.company_name||'—'}</td>
           <td class="text-right">${fmtShares(t.shares)}</td>
           <td class="text-right">${fmt$(t.price)}</td>
-          <td class="text-right ${t.type === 'buy' ? 'red' : 'green'}">${t.type === 'buy' ? '-' : '+'}${fmt$(t.total)}</td>
-        </tr>
-      `).join('');
-    } catch (err) {
-      console.error('History error:', err);
-    }
+          <td class="text-right ${t.type==='buy'?'red':'green'}">${t.type==='buy'?'−':'+'}${fmt$(t.total)}</td>
+        </tr>`).join('');}
+      const fCard=document.getElementById('futures-history-card'),fb=document.getElementById('futures-history-body');
+      if(currentGame?.allow_futures){fCard.style.display='';
+        if(!ftxns.length){fb.innerHTML='';document.getElementById('futures-history-empty').style.display='';}
+        else{document.getElementById('futures-history-empty').style.display='none';
+          fb.innerHTML=ftxns.map(t=>`<tr>
+            <td class="muted">${fmtDate(t.executed_at)}</td>
+            <td><span class="pill pill-${t.action}">${t.action.toUpperCase()}</span></td>
+            <td><strong>${t.symbol}</strong></td>
+            <td><span class="pill pill-${t.direction}">${t.direction.toUpperCase()}</span></td>
+            <td class="text-right">${fmtShares(t.contracts)}</td>
+            <td class="text-right">${fmt$(t.price)}</td>
+            <td class="text-right ${colorClass(t.realized_pnl)}">${t.realized_pnl!==0?(t.realized_pnl>=0?'+':'')+ fmt$(t.realized_pnl):'—'}</td>
+          </tr>`).join('');}
+      } else { fCard.style.display='none'; }
+    } catch(err){console.error(err);}
   }
 
-  // ── Admin ─────────────────────────────────────────────────────────────────
+  // ── Admin ──────────────────────────────────────────────────────────────────
   async function loadAdmin() {
     try {
-      const cfg = await api('GET', '/api/game/config');
-      if (cfg) {
-        document.getElementById('admin-title').value = cfg.title || '';
-        document.getElementById('admin-start').value = cfg.start_date || '';
-        document.getElementById('admin-end').value   = cfg.end_date   || '';
-        document.getElementById('admin-cash').value  = cfg.starting_cash || 10000;
-        document.getElementById('admin-fractional').checked = !!cfg.allow_fractional;
-        const markets = cfg.markets || ['NYSE', 'NASDAQ'];
-        document.querySelectorAll('input[name=market]').forEach(cb => {
-          cb.checked = markets.includes(cb.value);
-        });
-      }
-      const players = await api('GET', '/api/game/players');
-      document.getElementById('admin-players-body').innerHTML = players.map(p => `
-        <tr>
-          <td><strong>${p.username}</strong></td>
-          <td class="muted">${p.email}</td>
-          <td>${p.is_admin ? '<span class="badge-admin">ADMIN</span>' : '<span class="muted">Player</span>'}</td>
-          <td class="muted">${fmtDate(p.created_at)}</td>
-        </tr>
-      `).join('');
-    } catch (err) {
-      console.error('Admin error:', err);
-    }
+      const [games, players] = await Promise.all([api('GET','/api/games'), api('GET','/api/admin/players')]);
+      // Games list
+      document.getElementById('admin-games-list').innerHTML = games.length ? `
+        <div class="table-wrap"><table>
+          <thead><tr><th>Title</th><th>Status</th><th>Dates</th><th>Starting Cash</th><th>Players</th><th>Futures</th><th></th></tr></thead>
+          <tbody>${games.map(g=>`<tr>
+            <td><strong>${g.title}</strong></td>
+            <td><span class="badge-status badge-${g.status}">${g.status.toUpperCase()}</span>${g.is_active?'':' <span class="muted">(hidden)</span>'}</td>
+            <td class="muted">${fmtDateShort(g.start_date)} → ${fmtDateShort(g.end_date)}</td>
+            <td>${fmt$(g.starting_cash,0)}</td>
+            <td>${g.player_count}</td>
+            <td>${g.allow_futures?'<span class="green">✓</span>':'<span class="muted">—</span>'}</td>
+            <td><button class="btn btn-ghost btn-sm" onclick="App.editGame(${g.id})">Edit</button></td>
+          </tr>`).join('')}</tbody>
+        </table></div>` : '<div class="muted" style="margin-bottom:16px">No simulations yet.</div>';
+      // Players
+      document.getElementById('admin-players-body').innerHTML=players.map(p=>`<tr>
+        <td><strong>${p.username}</strong></td><td class="muted">${p.email}</td>
+        <td>${p.is_admin?'<span class="badge badge-admin">ADMIN</span>':'<span class="muted">Player</span>'}</td>
+        <td class="muted">${fmtDate(p.created_at)}</td>
+      </tr>`).join('');
+    } catch(err){console.error(err);}
+  }
+
+  async function editGame(id) {
+    try {
+      const g = await api('GET',`/api/games/${id}`);
+      document.getElementById('admin-edit-id').value=g.id;
+      document.getElementById('admin-title').value=g.title||'';
+      document.getElementById('admin-start').value=g.start_date||'';
+      document.getElementById('admin-end').value=g.end_date||'';
+      document.getElementById('admin-cash').value=g.starting_cash||10000;
+      document.getElementById('admin-margin').value=g.futures_margin||0.20;
+      document.getElementById('admin-fractional').checked=!!g.allow_fractional;
+      document.getElementById('admin-futures').checked=!!g.allow_futures;
+      document.getElementById('admin-active').checked=!!g.is_active;
+      const markets=Array.isArray(g.markets)?g.markets:JSON.parse(g.markets||'[]');
+      document.querySelectorAll('input[name=market]').forEach(cb=>cb.checked=markets.includes(cb.value));
+      document.getElementById('admin-form-title').textContent=`Edit: ${g.title}`;
+      document.getElementById('admin-save-btn').textContent='Save Changes';
+      document.getElementById('admin-cancel-btn').style.display='';
+      document.getElementById('admin-form-title').scrollIntoView({behavior:'smooth'});
+    } catch(err){toast(err.message,'error');}
+  }
+
+  function resetAdminForm() {
+    document.getElementById('admin-edit-id').value='';
+    document.getElementById('admin-title').value='';
+    document.getElementById('admin-start').value='';
+    document.getElementById('admin-end').value='';
+    document.getElementById('admin-cash').value='';
+    document.getElementById('admin-margin').value='0.20';
+    document.getElementById('admin-fractional').checked=true;
+    document.getElementById('admin-futures').checked=false;
+    document.getElementById('admin-active').checked=true;
+    document.querySelectorAll('input[name=market]').forEach(cb=>cb.checked=['NYSE','NASDAQ'].includes(cb.value));
+    document.getElementById('admin-form-title').textContent='Create New Simulation';
+    document.getElementById('admin-save-btn').textContent='Create Simulation';
+    document.getElementById('admin-cancel-btn').style.display='none';
+    document.getElementById('admin-error').textContent='';
   }
 
   async function saveGameConfig() {
-    const errEl = document.getElementById('admin-error');
-    errEl.textContent = '';
-    const markets = [...document.querySelectorAll('input[name=market]:checked')].map(c => c.value);
-    if (!markets.length) { errEl.textContent = 'Select at least one market.'; return; }
-
-    const body = {
-      title:            document.getElementById('admin-title').value.trim(),
-      start_date:       document.getElementById('admin-start').value,
-      end_date:         document.getElementById('admin-end').value,
-      starting_cash:    parseFloat(document.getElementById('admin-cash').value),
-      markets,
-      allow_fractional: document.getElementById('admin-fractional').checked,
+    const errEl=document.getElementById('admin-error'); errEl.textContent='';
+    const editId=document.getElementById('admin-edit-id').value;
+    const markets=[...document.querySelectorAll('input[name=market]:checked')].map(c=>c.value);
+    if(!markets.length){errEl.textContent='Select at least one market.';return;}
+    const body={
+      title:document.getElementById('admin-title').value.trim(),
+      start_date:document.getElementById('admin-start').value,
+      end_date:document.getElementById('admin-end').value,
+      starting_cash:parseFloat(document.getElementById('admin-cash').value),
+      futures_margin:parseFloat(document.getElementById('admin-margin').value)||0.20,
+      markets, allow_fractional:document.getElementById('admin-fractional').checked,
+      allow_futures:document.getElementById('admin-futures').checked,
+      is_active:document.getElementById('admin-active').checked,
     };
-
     try {
-      game = await api('POST', '/api/game/config', body);
-      updateBanner();
-      toast('Game configuration saved!', 'success');
-      loadAdmin();
-    } catch (err) {
-      errEl.textContent = err.message;
-    }
+      if(editId) { await api('PUT',`/api/games/${editId}`,body); toast('Simulation updated!','success'); }
+      else        { await api('POST','/api/games',body); toast('Simulation created!','success'); }
+      resetAdminForm(); loadAdmin();
+    } catch(err){errEl.textContent=err.message;}
   }
 
-  // ── Sell Modal ────────────────────────────────────────────────────────────
-  let sellModalSymbol = null;
-  let sellModalMaxShares = 0;
-  let sellModalPrice = 0;
-
-  function openSellModal(symbol, shares, price, companyName) {
-    sellModalSymbol   = symbol;
-    sellModalMaxShares = parseFloat(shares);
-    sellModalPrice    = parseFloat(price);
-    document.getElementById('sell-modal-title').textContent = `Sell ${symbol}`;
-    document.getElementById('sell-modal-info').innerHTML =
-      `<strong>${companyName || symbol}</strong><br>` +
-      `You own <strong>${fmtShares(sellModalMaxShares)}</strong> share(s) &nbsp;·&nbsp; ` +
-      `Current price <strong>${fmt$(sellModalPrice)}</strong><br>` +
-      `Market value <strong>${fmt$(sellModalMaxShares * sellModalPrice)}</strong>`;
-    document.getElementById('sell-modal-shares').value = '';
-    document.getElementById('sell-modal-total').textContent = '$0.00';
-    document.getElementById('sell-modal-cash-after').textContent = '—';
-    document.getElementById('sell-modal-error').textContent = '';
-    document.getElementById('sell-modal-label').textContent = `Sell ${symbol}`;
-    document.getElementById('sell-modal-btn').disabled = false;
-    document.getElementById('sell-modal').style.display = 'flex';
-    setTimeout(() => document.getElementById('sell-modal-shares').focus(), 50);
+  // ── Sell stock modal ───────────────────────────────────────────────────────
+  function openSellModal(symbol,shares,price,companyName){
+    smSymbol=symbol;smMaxShares=parseFloat(shares);smPrice=parseFloat(price);
+    document.getElementById('sell-modal-title').textContent=`Sell ${symbol}`;
+    document.getElementById('sell-modal-info').innerHTML=`<strong>${companyName||symbol}</strong><br>You own <strong>${fmtShares(smMaxShares)}</strong> share(s) · Price <strong>${fmt$(smPrice)}</strong><br>Market value <strong>${fmt$(smMaxShares*smPrice)}</strong>`;
+    document.getElementById('sell-modal-shares').value=''; document.getElementById('sell-modal-total').textContent='$0.00';
+    document.getElementById('sell-modal-cash-after').textContent='—'; document.getElementById('sell-modal-error').textContent='';
+    document.getElementById('sell-modal-label').textContent=`Sell ${symbol}`; document.getElementById('sell-modal-btn').disabled=false;
+    document.getElementById('sell-modal').style.display='flex';
+    setTimeout(()=>document.getElementById('sell-modal-shares').focus(),50);
+  }
+  function closeSellModal(){document.getElementById('sell-modal').style.display='none';smSymbol=null;}
+  function updateSellModalTotal(){const s=parseFloat(document.getElementById('sell-modal-shares').value)||0;document.getElementById('sell-modal-total').textContent=fmt$(s*smPrice);document.getElementById('sell-modal-cash-after').textContent=fmt$((portfolio?.cash_balance??0)+s*smPrice);}
+  function setSellModalMax(){document.getElementById('sell-modal-shares').value=smMaxShares;updateSellModalTotal();}
+  async function executeSellModal(){
+    const s=parseFloat(document.getElementById('sell-modal-shares').value),errEl=document.getElementById('sell-modal-error');errEl.textContent='';
+    if(!s||s<=0){errEl.textContent='Enter a valid quantity.';return;}
+    if(s>smMaxShares+0.000001){errEl.textContent=`You only own ${fmtShares(smMaxShares)} share(s).`;return;}
+    const btn=document.getElementById('sell-modal-btn');btn.disabled=true;btn.innerHTML='<span class="spinner"></span>';
+    try{const r=await api('POST',`/api/games/${currentGameId}/trades/sell`,{symbol:smSymbol,shares:s});closeSellModal();toast(r.message,'success');await loadPortfolio();}
+    catch(err){errEl.textContent=err.message;btn.disabled=false;document.getElementById('sell-modal-label').textContent=`Sell ${smSymbol}`;}
   }
 
-  function closeSellModal() {
-    document.getElementById('sell-modal').style.display = 'none';
-    sellModalSymbol = null;
+  // ── Close futures modal ────────────────────────────────────────────────────
+  function openCloseFuturesModal(symbol,contracts,entry,dir,marginHeld,currentPrice,name){
+    cfmSymbol=symbol;cfmMax=parseFloat(contracts);cfmEntry=parseFloat(entry);cfmDir=dir;cfmMarginHeld=parseFloat(marginHeld);
+    const unrealized=(dir==='long'?(currentPrice-entry):(entry-currentPrice))*contracts;
+    document.getElementById('cfm-title').textContent=`Close ${symbol} ${dir.toUpperCase()}`;
+    document.getElementById('cfm-info').innerHTML=`<strong>${name||symbol}</strong> · <span class="pill pill-${dir}">${dir.toUpperCase()}</span><br>Open contracts: <strong>${fmtShares(cfmMax)}</strong> at entry <strong>${fmt$(cfmEntry)}</strong><br>Current price: <strong>${fmt$(currentPrice)}</strong> · Unrealized P&L: <strong class="${colorClass(unrealized)}">${unrealized>=0?'+':''}${fmt$(unrealized)}</strong>`;
+    document.getElementById('cfm-contracts').value=''; document.getElementById('cfm-pnl').textContent='$0.00';
+    document.getElementById('cfm-margin').textContent='$0.00'; document.getElementById('cfm-cash-after').textContent='—';
+    document.getElementById('cfm-error').textContent=''; document.getElementById('cfm-label').textContent=`Close ${symbol}`;
+    document.getElementById('cfm-btn').disabled=false;
+    document.getElementById('close-futures-modal').style.display='flex';
+    setTimeout(()=>document.getElementById('cfm-contracts').focus(),50);
+  }
+  function closeCloseFuturesModal(){document.getElementById('close-futures-modal').style.display='none';cfmSymbol=null;}
+  function updateCfmTotal(){
+    const c=parseFloat(document.getElementById('cfm-contracts').value)||0;
+    const pnl=(cfmDir==='long'?(selectedFutures?.price??cfmEntry)-cfmEntry:(cfmEntry-(selectedFutures?.price??cfmEntry)))*c;
+    const propMargin=(c/cfmMax)*cfmMarginHeld;
+    document.getElementById('cfm-pnl').textContent=fmt$(pnl); document.getElementById('cfm-pnl').className=colorClass(pnl);
+    document.getElementById('cfm-margin').textContent=fmt$(propMargin);
+    document.getElementById('cfm-cash-after').textContent=fmt$((portfolio?.cash_balance??0)+propMargin+pnl);
+  }
+  function setCfmMax(){document.getElementById('cfm-contracts').value=cfmMax;updateCfmTotal();}
+  async function executeClosePosition(){
+    const c=parseFloat(document.getElementById('cfm-contracts').value),errEl=document.getElementById('cfm-error');errEl.textContent='';
+    if(!c||c<=0){errEl.textContent='Enter contracts to close.';return;}
+    if(c>cfmMax+0.000001){errEl.textContent=`You only have ${fmtShares(cfmMax)} open.`;return;}
+    const btn=document.getElementById('cfm-btn');btn.disabled=true;btn.innerHTML='<span class="spinner"></span>';
+    try{const r=await api('POST',`/api/games/${currentGameId}/futures/close`,{symbol:cfmSymbol,contracts:c});closeCloseFuturesModal();toast(r.message,'success');await loadPortfolio();}
+    catch(err){errEl.textContent=err.message;btn.disabled=false;document.getElementById('cfm-label').textContent=`Close ${cfmSymbol}`;}
   }
 
-  function updateSellModalTotal() {
-    const shares   = parseFloat(document.getElementById('sell-modal-shares').value) || 0;
-    const proceeds = shares * sellModalPrice;
-    const cashNow  = portfolio?.cash_balance ?? 0;
-    document.getElementById('sell-modal-total').textContent     = fmt$(proceeds);
-    document.getElementById('sell-modal-cash-after').textContent = fmt$(cashNow + proceeds);
-  }
-
-  function setSellModalMax() {
-    document.getElementById('sell-modal-shares').value = sellModalMaxShares;
-    updateSellModalTotal();
-  }
-
-  async function executeSellModal() {
-    const shares = parseFloat(document.getElementById('sell-modal-shares').value);
-    const errEl  = document.getElementById('sell-modal-error');
-    errEl.textContent = '';
-    if (!shares || shares <= 0)              { errEl.textContent = 'Enter a valid number of shares.'; return; }
-    if (shares > sellModalMaxShares + 0.000001) { errEl.textContent = `You only own ${fmtShares(sellModalMaxShares)} share(s).`; return; }
-
-    const btn = document.getElementById('sell-modal-btn');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span>';
-    try {
-      const result = await api('POST', '/api/trades/sell', { symbol: sellModalSymbol, shares });
-      closeSellModal();
-      toast(result.message, 'success');
-      await loadDashboard();
-    } catch (err) {
-      errEl.textContent = err.message;
-      btn.disabled = false;
-      document.getElementById('sell-modal-label').textContent = `Sell ${sellModalSymbol}`;
-    }
-  }
-
-  // ── Keyboard & click-away ─────────────────────────────────────────────────
+  // ── Keyboard ───────────────────────────────────────────────────────────────
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') closeSellModal();
-    if (e.key === 'Enter') {
-      if (document.getElementById('sell-modal').style.display !== 'none') { executeSellModal(); return; }
-      if (document.getElementById('form-login').style.display !== 'none') login();
-      if (document.getElementById('form-register').style.display !== 'none') register();
+    if(e.key==='Escape'){ closeSellModal(); closeCloseFuturesModal(); }
+    if(e.key==='Enter'){
+      if(document.getElementById('sell-modal').style.display!=='none'){executeSellModal();return;}
+      if(document.getElementById('close-futures-modal').style.display!=='none'){executeClosePosition();return;}
+      if(document.getElementById('form-login').style.display!=='none') login();
+      if(document.getElementById('form-register').style.display!=='none') register();
     }
   });
+  document.addEventListener('click', e => { if(!e.target.closest('.search-wrap')) document.getElementById('search-dropdown').style.display='none'; });
 
-  document.addEventListener('click', e => {
-    if (!e.target.closest('.search-wrap')) {
-      document.getElementById('search-dropdown').style.display = 'none';
-    }
-  });
-
-  // ── Boot ──────────────────────────────────────────────────────────────────
+  // ── Init ───────────────────────────────────────────────────────────────────
   async function init() {
-    if (token) {
-      try {
-        user = await api('GET', '/api/auth/me');
-        await showApp();
-      } catch {
-        localStorage.removeItem('sa_token');
-        token = null;
-      }
+    if(token){
+      try{ user=await api('GET','/api/auth/me'); showApp(); }
+      catch{ localStorage.removeItem('sa_token'); token=null; }
     }
   }
-
   init();
 
   return {
     navigate, login, register, logout, switchAuthTab,
-    onSearchInput, onSearchFocus, selectStock, loadQuoteForSymbol,
+    joinAndEnter, exitGame, loadQuoteForSymbol,
+    onSearchInput, onSearchFocus, selectStock,
     setTradeType, executeTrade, setMaxShares, updateTradeTotal,
+    filterFutures, selectFutures, setFuturesDir, updateFuturesTotal, setMaxFuturesContracts, openFuturesPosition,
     openSellModal, closeSellModal, updateSellModalTotal, setSellModalMax, executeSellModal,
-    saveGameConfig,
+    openCloseFuturesModal, closeCloseFuturesModal, updateCfmTotal, setCfmMax, executeClosePosition,
+    editGame, resetAdminForm, saveGameConfig,
   };
 })();
 </script>

@@ -3,7 +3,6 @@ import { fileURLToPath } from 'url';
 import path from 'path';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
 const db = new Database(path.join(__dirname, 'stockgame.db'));
 
 db.pragma('journal_mode = WAL');
@@ -11,15 +10,17 @@ db.pragma('foreign_keys = ON');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS game_config (
-    id          INTEGER PRIMARY KEY,
-    title       TEXT    NOT NULL DEFAULT 'Stock Trading Game',
-    start_date  TEXT    NOT NULL,
-    end_date    TEXT    NOT NULL,
-    starting_cash REAL  NOT NULL DEFAULT 10000,
-    markets     TEXT    NOT NULL DEFAULT '["NYSE","NASDAQ"]',
+    id               INTEGER PRIMARY KEY,
+    title            TEXT    NOT NULL DEFAULT 'Stock Trading Game',
+    start_date       TEXT    NOT NULL,
+    end_date         TEXT    NOT NULL,
+    starting_cash    REAL    NOT NULL DEFAULT 10000,
+    markets          TEXT    NOT NULL DEFAULT '["NYSE","NASDAQ"]',
     allow_fractional INTEGER NOT NULL DEFAULT 1,
-    is_active   INTEGER NOT NULL DEFAULT 0,
-    created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+    allow_futures    INTEGER NOT NULL DEFAULT 0,
+    futures_margin   REAL    NOT NULL DEFAULT 0.20,
+    is_active        INTEGER NOT NULL DEFAULT 1,
+    created_at       TEXT    NOT NULL DEFAULT (datetime('now'))
   );
 
   CREATE TABLE IF NOT EXISTS users (
@@ -36,6 +37,7 @@ db.exec(`
     user_id      INTEGER NOT NULL,
     game_id      INTEGER NOT NULL,
     cash_balance REAL    NOT NULL,
+    joined_at    TEXT    NOT NULL DEFAULT (datetime('now')),
     UNIQUE(user_id, game_id),
     FOREIGN KEY (user_id) REFERENCES users(id),
     FOREIGN KEY (game_id) REFERENCES game_config(id)
@@ -68,6 +70,55 @@ db.exec(`
     FOREIGN KEY (user_id) REFERENCES users(id),
     FOREIGN KEY (game_id) REFERENCES game_config(id)
   );
+
+  CREATE TABLE IF NOT EXISTS futures_positions (
+    id           INTEGER PRIMARY KEY,
+    user_id      INTEGER NOT NULL,
+    game_id      INTEGER NOT NULL,
+    symbol       TEXT    NOT NULL,
+    name         TEXT    NOT NULL DEFAULT '',
+    direction    TEXT    NOT NULL CHECK(direction IN ('long','short')),
+    contracts    REAL    NOT NULL DEFAULT 0,
+    entry_price  REAL    NOT NULL,
+    margin_held  REAL    NOT NULL DEFAULT 0,
+    opened_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(user_id, game_id, symbol),
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (game_id) REFERENCES game_config(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS futures_transactions (
+    id           INTEGER PRIMARY KEY,
+    user_id      INTEGER NOT NULL,
+    game_id      INTEGER NOT NULL,
+    symbol       TEXT    NOT NULL,
+    name         TEXT    NOT NULL DEFAULT '',
+    direction    TEXT    NOT NULL CHECK(direction IN ('long','short')),
+    action       TEXT    NOT NULL CHECK(action IN ('open','add','close')),
+    contracts    REAL    NOT NULL,
+    price        REAL    NOT NULL,
+    margin_used  REAL    NOT NULL DEFAULT 0,
+    realized_pnl REAL    NOT NULL DEFAULT 0,
+    executed_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (game_id) REFERENCES game_config(id)
+  );
 `);
+
+// Safe migrations for existing databases — silently skip if column already exists
+const migrations = [
+  "ALTER TABLE game_config ADD COLUMN allow_futures  INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE game_config ADD COLUMN futures_margin REAL    NOT NULL DEFAULT 0.20",
+  "ALTER TABLE game_config ADD COLUMN is_active      INTEGER NOT NULL DEFAULT 1",
+  "ALTER TABLE portfolios  ADD COLUMN joined_at      TEXT    NOT NULL DEFAULT (datetime('now'))",
+];
+for (const sql of migrations) { try { db.exec(sql); } catch {} }
+
+// Migrate: old schema had is_active=0 on deactivated games; set all existing to active=1
+// so they show up in the new multi-game lobby (admin can deactivate manually if desired)
+try {
+  const count = db.prepare("SELECT COUNT(*) as c FROM game_config WHERE is_active = 1").get().c;
+  if (count === 0) db.prepare("UPDATE game_config SET is_active = 1").run();
+} catch {}
 
 export default db;
