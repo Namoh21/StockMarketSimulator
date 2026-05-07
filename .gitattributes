@@ -1,0 +1,6 @@
+# Ensure shell scripts always have Unix line endings in the repo
+*.sh    text eol=lf
+*.service text eol=lf
+
+# Everything else uses standard line-ending normalization
+*       text=auto

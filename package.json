@@ -1,0 +1,19 @@
+{
+  "name": "stock-trading-game",
+  "version": "1.0.0",
+  "description": "Stock Trading Simulation Game",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^9.4.3",
+    "express": "^4.18.3",
+    "jsonwebtoken": "^9.0.2",
+    "yahoo-finance2": "^2.11.3"
+  }
+}

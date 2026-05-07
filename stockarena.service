@@ -1,0 +1,35 @@
+# StockArena systemd service unit
+# This file is used as a template by install.sh — paths are substituted automatically.
+# To install manually:
+#   sudo cp stockarena.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable stockarena
+#   sudo systemctl start stockarena
+
+[Unit]
+Description=StockArena Stock Trading Game
+Documentation=https://github.com/Namoh21/StockMarketSimulator
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/StockMarketSimulator
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=stockarena
+
+# Load environment variables from .env file (optional, won't fail if missing)
+EnvironmentFile=-/home/pi/StockMarketSimulator/.env
+
+# Light security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/pi/StockMarketSimulator
+
+[Install]
+WantedBy=multi-user.target
