@@ -21,37 +21,74 @@ const YF_HEADERS = {
 };
 
 async function yfSearch(query, count = 10) {
-  const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=${count}&newsCount=0&enableFuzzyQuery=false`;
-  const res = await fetch(url, { headers: YF_HEADERS, signal: AbortSignal.timeout(8000) });
-  if (!res.ok) throw new Error(`Yahoo Finance search HTTP ${res.status}`);
-  const data = await res.json();
-  return data?.quotes || [];
+  const hosts = ['query2.finance.yahoo.com', 'query1.finance.yahoo.com'];
+  for (const host of hosts) {
+    try {
+      const url = `https://${host}/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=${count}&newsCount=0&enableFuzzyQuery=false`;
+      const res  = await fetch(url, { headers: YF_HEADERS, signal: AbortSignal.timeout(8000) });
+      if (!res.ok) continue;
+      const data = await res.json();
+      return data?.quotes || [];
+    } catch {}
+  }
+  return [];
 }
 
 async function yfQuote(symbol) {
-  const url = `https://query1.finance.yahoo.com/v6/finance/quote?symbols=${encodeURIComponent(symbol)}&lang=en-US&region=US`;
-  const res = await fetch(url, { headers: YF_HEADERS, signal: AbortSignal.timeout(8000) });
-  if (!res.ok) throw new Error(`Yahoo Finance quote HTTP ${res.status}`);
-  const data = await res.json();
-  const q = data?.quoteResponse?.result?.[0];
-  if (!q || q.regularMarketPrice == null) throw new Error(`No price data for ${symbol}`);
-  return q;
+  // v8/finance/chart is more reliable than v6/finance/quote and returns
+  // the same price data in the meta field. Try query2 then query1.
+  const hosts = ['query2.finance.yahoo.com', 'query1.finance.yahoo.com'];
+  let lastErr;
+  for (const host of hosts) {
+    try {
+      const url = `https://${host}/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d&includePrePost=false`;
+      const res  = await fetch(url, { headers: YF_HEADERS, signal: AbortSignal.timeout(8000) });
+      if (!res.ok) { lastErr = new Error(`HTTP ${res.status} from ${host}`); continue; }
+      const data = await res.json();
+      const meta = data?.chart?.result?.[0]?.meta;
+      if (!meta || meta.regularMarketPrice == null) { lastErr = new Error(`No price data for ${symbol}`); continue; }
+      const prev = meta.chartPreviousClose ?? meta.regularMarketPreviousClose ?? meta.regularMarketPrice;
+      const change = meta.regularMarketPrice - prev;
+      return {
+        symbol:                     meta.symbol || symbol,
+        longName:                   meta.longName  || meta.shortName || symbol,
+        shortName:                  meta.shortName || symbol,
+        regularMarketPrice:         meta.regularMarketPrice,
+        regularMarketOpen:          meta.regularMarketOpen          ?? meta.regularMarketPrice,
+        regularMarketDayHigh:       meta.regularMarketDayHigh       ?? meta.regularMarketPrice,
+        regularMarketDayLow:        meta.regularMarketDayLow        ?? meta.regularMarketPrice,
+        regularMarketVolume:        meta.regularMarketVolume        ?? 0,
+        regularMarketChange:        change,
+        regularMarketChangePercent: prev ? (change / prev) * 100 : 0,
+        marketCap:                  null,
+        exchange:                   meta.exchangeName || meta.fullExchangeName || '',
+        marketState:                meta.marketState  || 'CLOSED',
+      };
+    } catch (err) { lastErr = err; }
+  }
+  throw lastErr ?? new Error(`Could not fetch quote for ${symbol}`);
 }
 
 async function yfChart(symbol, period1) {
-  const p1 = Math.floor(new Date(period1).getTime() / 1000);
-  const p2 = Math.floor(Date.now() / 1000);
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&period1=${p1}&period2=${p2}`;
-  const res = await fetch(url, { headers: YF_HEADERS, signal: AbortSignal.timeout(10000) });
-  if (!res.ok) throw new Error(`Yahoo Finance chart HTTP ${res.status}`);
-  const data = await res.json();
-  const result = data?.chart?.result?.[0];
-  if (!result) return [];
-  const timestamps = result.timestamp || [];
-  const closes    = result.indicators?.quote?.[0]?.close || [];
-  return timestamps
-    .map((t, i) => ({ date: new Date(t * 1000).toISOString(), close: closes[i] }))
-    .filter(d => d.close != null);
+  const p1    = Math.floor(new Date(period1).getTime() / 1000);
+  const p2    = Math.floor(Date.now() / 1000);
+  const hosts = ['query2.finance.yahoo.com', 'query1.finance.yahoo.com'];
+  for (const host of hosts) {
+    try {
+      const url  = `https://${host}/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&period1=${p1}&period2=${p2}`;
+      const res  = await fetch(url, { headers: YF_HEADERS, signal: AbortSignal.timeout(10000) });
+      if (!res.ok) continue;
+      const data   = await res.json();
+      const result = data?.chart?.result?.[0];
+      if (!result) return [];
+      const timestamps = result.timestamp || [];
+      const closes     = result.indicators?.quote?.[0]?.close || [];
+      return timestamps
+        .map((t, i) => ({ date: new Date(t * 1000).toISOString(), close: closes[i] }))
+        .filter(d => d.close != null);
+    } catch {}
+  }
+  return [];
 }
 
 // ── Price cache (5-min TTL) ──────────────────────────────────────────────────
