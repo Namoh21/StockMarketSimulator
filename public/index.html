@@ -952,39 +952,90 @@ const App = (() => {
   }
 
   async function loadQuoteForSymbol(symbol) {
-    navigate('trade');
+    // Navigate to trade tab only if we're on a different view
+    if (!document.getElementById('view-trade').classList.contains('active')) {
+      navigate('trade');
+    }
+
     currentSymbol = symbol.toUpperCase();
-    document.getElementById('quote-card').style.display='';
-    document.getElementById('trade-select-hint').style.display='none';
-    document.getElementById('trade-form-card').style.display='none';
-    document.getElementById('stock-search').value=symbol;
-    document.getElementById('q-symbol').textContent=symbol; document.getElementById('q-name').textContent='Loading…'; document.getElementById('q-price').textContent='…';
+    document.getElementById('stock-search').value = symbol;
+    document.getElementById('search-dropdown').style.display = 'none';
+
+    // Show the quote card immediately with a loading state
+    // Use display:'block' — setting '' only removes the inline style but
+    // the CSS rule #quote-card { display:none } would still win.
+    document.getElementById('quote-card').style.display      = 'block';
+    document.getElementById('trade-select-hint').style.display = 'none';
+    document.getElementById('trade-form-card').style.display = 'none';
+
+    document.getElementById('q-symbol').textContent   = symbol;
+    document.getElementById('q-name').textContent     = 'Loading…';
+    document.getElementById('q-price').textContent    = '—';
+    document.getElementById('q-change').textContent   = '';
+    document.getElementById('q-open').textContent     = '—';
+    document.getElementById('q-high').textContent     = '—';
+    document.getElementById('q-low').textContent      = '—';
+    document.getElementById('q-vol').textContent      = '—';
+    document.getElementById('chart-container').innerHTML =
+      '<div class="muted" style="text-align:center;padding:14px;font-size:11px">Loading chart…</div>';
+
     try {
-      const q = await api('GET',`/api/stocks/quote/${symbol}`);
+      const q = await api('GET', `/api/stocks/quote/${encodeURIComponent(symbol)}`);
       currentQuote = q;
-      document.getElementById('q-symbol').textContent=q.symbol;
-      document.getElementById('q-name').textContent=q.name;
-      document.getElementById('q-exchange').textContent=`${q.exchange} · ${q.marketState}`;
-      document.getElementById('q-price').textContent=fmt$(q.price);
-      const chEl=document.getElementById('q-change');
-      chEl.textContent=`${q.change>=0?'+':''}${fmt$(q.change)} (${fmtPct(q.changePercent)})`; chEl.className='quote-change '+colorClass(q.change);
-      document.getElementById('q-open').textContent=fmt$(q.open); document.getElementById('q-high').textContent=fmt$(q.high);
-      document.getElementById('q-low').textContent=fmt$(q.low);   document.getElementById('q-vol').textContent=fmtVol(q.volume);
+
+      document.getElementById('q-symbol').textContent    = q.symbol;
+      document.getElementById('q-name').textContent      = q.name;
+      document.getElementById('q-exchange').textContent  = `${q.exchange} · ${q.marketState}`;
+      document.getElementById('q-price').textContent     = fmt$(q.price);
+      const chEl = document.getElementById('q-change');
+      chEl.textContent = `${q.change >= 0 ? '+' : ''}${fmt$(q.change)} (${fmtPct(q.changePercent)})`;
+      chEl.className   = 'quote-change ' + colorClass(q.change);
+      document.getElementById('q-open').textContent = fmt$(q.open);
+      document.getElementById('q-high').textContent = fmt$(q.high);
+      document.getElementById('q-low').textContent  = fmt$(q.low);
+      document.getElementById('q-vol').textContent  = fmtVol(q.volume);
+
+      // Load chart in background — don't block the form from appearing
       loadChart(symbol);
       refreshMarketStatus();
+
       // Holding badge
-      const h=portfolio?.holdings?.find(x=>x.symbol===symbol); const hEl=document.getElementById('current-holding');
-      if(h&&h.shares>0){hEl.style.display='';document.getElementById('holding-info').innerHTML=`You own <strong>${fmtShares(h.shares)}</strong> share(s) · avg <strong>${fmt$(h.avg_cost)}</strong>`;}else{hEl.style.display='none';}
-      // Status notice
-      const notice=document.getElementById('trade-status-notice');
-      if(!currentGame){notice.textContent='No active game loaded.';notice.style.display='';}
-      else if(currentGame.status==='pending'){notice.textContent=`Game starts ${fmtDateShort(currentGame.start_date)} — trading not open yet.`;notice.style.display='';}
-      else if(currentGame.status==='ended'){notice.textContent='Game has ended — no new trades.';notice.style.display='';}
-      else{notice.style.display='none';}
-      document.getElementById('trade-form-card').style.display='';
-      document.getElementById('trade-error').textContent=''; document.getElementById('trade-shares').value='';
-      updateTradeTotal(); setTradeType(tradeType);
-    } catch(err) { document.getElementById('q-name').textContent='Error: '+err.message; }
+      const h   = portfolio?.holdings?.find(x => x.symbol === symbol);
+      const hEl = document.getElementById('current-holding');
+      if (h && h.shares > 0) {
+        hEl.style.display = 'block';
+        document.getElementById('holding-info').innerHTML =
+          `You own <strong>${fmtShares(h.shares)}</strong> share(s) · avg <strong>${fmt$(h.avg_cost)}</strong>`;
+      } else {
+        hEl.style.display = 'none';
+      }
+
+      // Game status notice
+      const notice = document.getElementById('trade-status-notice');
+      if (!currentGame) {
+        notice.textContent = 'No active game — join a game first.';
+        notice.style.display = 'block';
+      } else if (currentGame.status === 'pending') {
+        notice.textContent = `Game starts ${fmtDateShort(currentGame.start_date)} — trading not open yet.`;
+        notice.style.display = 'block';
+      } else if (currentGame.status === 'ended') {
+        notice.textContent = 'This game has ended — no new trades allowed.';
+        notice.style.display = 'block';
+      } else {
+        notice.style.display = 'none';
+      }
+
+      // Show the trade form
+      document.getElementById('trade-form-card').style.display = 'block';
+      document.getElementById('trade-error').textContent = '';
+      document.getElementById('trade-shares').value = '';
+      updateTradeTotal();
+      setTradeType(tradeType);
+
+    } catch (err) {
+      document.getElementById('q-name').textContent = '⚠ ' + err.message;
+      console.error('Quote error:', err);
+    }
   }
 
   async function loadChart(symbol) {
@@ -1065,7 +1116,7 @@ const App = (() => {
       const h = portfolio?.holdings?.find(x => x.symbol === currentSymbol);
       const hEl = document.getElementById('current-holding');
       if (h && h.shares > 0) {
-        hEl.style.display = '';
+        hEl.style.display = 'block';
         document.getElementById('holding-info').innerHTML = `You own <strong>${fmtShares(h.shares)}</strong> share(s) · avg <strong>${fmt$(h.avg_cost)}</strong>`;
       } else { hEl.style.display = 'none'; }
       document.getElementById('trade-shares').value = '';
