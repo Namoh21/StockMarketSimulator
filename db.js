@@ -119,7 +119,8 @@ db.exec(`
     submitted_at  TEXT    NOT NULL DEFAULT (datetime('now')),
     filled_at     TEXT,
     filled_price  REAL,
-    filled_total  REAL,
+    filled_total    REAL,
+    reserved_amount REAL NOT NULL DEFAULT 0,
     FOREIGN KEY (user_id) REFERENCES users(id),
     FOREIGN KEY (game_id) REFERENCES game_config(id)
   );
@@ -127,10 +128,11 @@ db.exec(`
 
 // Safe migrations for existing databases — silently skip if column already exists
 const migrations = [
-  "ALTER TABLE game_config ADD COLUMN allow_futures  INTEGER NOT NULL DEFAULT 0",
-  "ALTER TABLE game_config ADD COLUMN futures_margin REAL    NOT NULL DEFAULT 0.20",
-  "ALTER TABLE game_config ADD COLUMN is_active      INTEGER NOT NULL DEFAULT 1",
-  "ALTER TABLE portfolios  ADD COLUMN joined_at      TEXT    NOT NULL DEFAULT (datetime('now'))",
+  "ALTER TABLE game_config    ADD COLUMN allow_futures    INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE game_config    ADD COLUMN futures_margin   REAL    NOT NULL DEFAULT 0.20",
+  "ALTER TABLE game_config    ADD COLUMN is_active        INTEGER NOT NULL DEFAULT 1",
+  "ALTER TABLE portfolios     ADD COLUMN joined_at        TEXT    NOT NULL DEFAULT (datetime('now'))",
+  "ALTER TABLE pending_orders ADD COLUMN reserved_amount  REAL    NOT NULL DEFAULT 0",
 ];
 for (const sql of migrations) { try { db.exec(sql); } catch {} }
 

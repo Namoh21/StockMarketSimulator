@@ -778,7 +778,11 @@ const App = (() => {
       const gainPct = (gain / data.game.starting_cash) * 100;
       document.getElementById('dash-stats').innerHTML = `
         <div class="card"><div class="card-title">Total Portfolio</div><div class="card-value">${fmt$(data.total_value)}</div><div class="card-sub ${colorClass(gain)}">${gain>=0?'+':'−'}${fmt$(Math.abs(gain))} (${fmtPct(gainPct)})</div></div>
-        <div class="card"><div class="card-title">Cash Available</div><div class="card-value">${fmt$(data.cash_balance)}</div><div class="card-sub">of ${fmt$(data.game.starting_cash,0)} starting</div></div>
+        <div class="card">
+          <div class="card-title">Available Cash</div>
+          <div class="card-value">${fmt$(data.available_cash ?? data.cash_balance)}</div>
+          <div class="card-sub">of ${fmt$(data.cash_balance)} balance${data.reserved_cash > 0 ? ` · <span style="color:var(--gold)">$${fmt$(data.reserved_cash).replace('$','')} in pending orders</span>` : ''}</div>
+        </div>
         <div class="card"><div class="card-title">Stock Value</div><div class="card-value">${fmt$(data.stock_value)}</div><div class="card-sub">${data.holdings.length} position${data.holdings.length!==1?'s':''}</div></div>
         ${data.game.allow_futures ? `<div class="card"><div class="card-title">Futures P&L</div><div class="card-value ${colorClass(data.futures_pnl)}">${data.futures_pnl>=0?'+':''}${fmt$(data.futures_pnl)}</div><div class="card-sub">${(data.futures_positions||[]).length} open</div></div>` : ''}
       `;
@@ -923,7 +927,16 @@ const App = (() => {
   }
 
   function updateTradeCash() {
-    document.getElementById('trade-cash').textContent = fmt$(portfolio?.cash_balance ?? 0);
+    const avail    = portfolio?.available_cash ?? portfolio?.cash_balance ?? 0;
+    const reserved = portfolio?.reserved_cash ?? 0;
+    const el       = document.getElementById('trade-cash');
+    if (el) {
+      el.textContent = fmt$(avail);
+      el.title = reserved > 0
+        ? `Total balance: ${fmt$(portfolio?.cash_balance)} · ${fmt$(reserved)} held in pending orders`
+        : '';
+      el.style.color = reserved > 0 ? 'var(--gold)' : '';
+    }
   }
 
   function onSearchInput(val) {
@@ -1080,8 +1093,8 @@ const App = (() => {
     const lp = parseFloat(document.getElementById('limit-price')?.value) || currentQuote.price;
     const refPrice = (ot === 'limit' && lp > 0) ? lp : currentQuote.price;
     if (tradeType === 'buy') {
-      // Use 99.9% of balance so floating-point rounding never pushes cost over the limit
-      const safeBalance = (portfolio?.cash_balance || 0) * 0.9999;
+      // Use available_cash (excludes pending order reservations) × 99.99% for float safety
+      const safeBalance = (portfolio?.available_cash ?? portfolio?.cash_balance ?? 0) * 0.9999;
       document.getElementById('trade-shares').value = Math.floor(safeBalance / refPrice * 10000) / 10000;
     } else {
       const h = portfolio?.holdings?.find(x => x.symbol === currentSymbol);
@@ -1104,13 +1117,15 @@ const App = (() => {
       errEl.textContent = 'Enter a valid limit price.'; return;
     }
 
-    // Client-side balance guard (server enforces this too, but catch it early)
+    // Client-side balance guard — uses available_cash (excludes pending order reservations)
     if (tradeType === 'buy' && currentQuote?.price) {
-      const refPrice = (orderType === 'limit' && limitPrice > 0) ? limitPrice : currentQuote.price;
+      const refPrice      = (orderType === 'limit' && limitPrice > 0) ? limitPrice : currentQuote.price;
       const estimatedCost = shares * refPrice;
-      const available     = portfolio?.cash_balance ?? 0;
+      const available     = portfolio?.available_cash ?? portfolio?.cash_balance ?? 0;
       if (estimatedCost > available + 0.001) {
-        errEl.textContent = `Insufficient funds — estimated cost $${estimatedCost.toFixed(2)}, available $${available.toFixed(2)}`;
+        const reserved = portfolio?.reserved_cash ?? 0;
+        errEl.textContent = `Insufficient funds — estimated cost $${estimatedCost.toFixed(2)}, available $${available.toFixed(2)}` +
+          (reserved > 0 ? ` (${fmt$(reserved)} is held in pending orders)` : '');
         return;
       }
     }

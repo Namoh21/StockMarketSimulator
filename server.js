@@ -224,6 +224,19 @@ function ensurePortfolio(userId, gameId, startingCash) {
   return p;
 }
 
+// Sum of cash held by pending buy orders — these funds are reserved and unavailable.
+function pendingReserved(userId, gameId) {
+  return db.prepare(
+    "SELECT COALESCE(SUM(reserved_amount),0) as total FROM pending_orders WHERE user_id=? AND game_id=? AND type='buy' AND status='pending'"
+  ).get(userId, gameId)?.total ?? 0;
+}
+
+// Cash the user can actually spend: balance minus anything locked in pending buys.
+function availableCash(userId, gameId, portfolio = null) {
+  const p = portfolio ?? db.prepare('SELECT cash_balance FROM portfolios WHERE user_id=? AND game_id=?').get(userId, gameId);
+  return Math.max(0, (p?.cash_balance ?? 0) - pendingReserved(userId, gameId));
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // AUTH
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -437,11 +450,14 @@ app.get('/api/games/:gameId/portfolio', requireAuth, loadGame, async (req, res) 
     }
   }));
 
-  const stockValue   = enriched.reduce((s, h) => s + h.market_value, 0);
-  const futuresPnl   = enrichedFutures.reduce((s, f) => s + f.unrealized_pnl, 0);
-  const totalValue   = portfolio.cash_balance + stockValue + futuresPnl;
+  const stockValue    = enriched.reduce((s, h) => s + h.market_value, 0);
+  const futuresPnl    = enrichedFutures.reduce((s, f) => s + f.unrealized_pnl, 0);
+  const reservedCash  = pendingReserved(req.user.id, game.id);
+  const availCash     = Math.max(0, portfolio.cash_balance - reservedCash);
+  const totalValue    = portfolio.cash_balance + stockValue + futuresPnl;
 
-  res.json({ game, cash_balance: portfolio.cash_balance, stock_value: stockValue,
+  res.json({ game, cash_balance: portfolio.cash_balance, reserved_cash: reservedCash,
+    available_cash: availCash, stock_value: stockValue,
     futures_pnl: futuresPnl, total_value: totalValue, holdings: enriched, futures_positions: enrichedFutures });
 });
 
@@ -546,14 +562,15 @@ app.post('/api/games/:gameId/orders', requireAuth, loadGame, async (req, res) =>
   }
 
   const open = isMarketOpen();
+  const portfolio = ensurePortfolio(req.user.id, game.id, game.starting_cash);
 
-  // Market order + market open → fill immediately
+  // Market order + market open → fill immediately using available cash
   if (order_type === 'market' && open) {
     if (type === 'buy') {
-      const portfolio = ensurePortfolio(req.user.id, game.id, game.starting_cash);
-      const cost = +(quote.price * shares).toFixed(6);
-      if (cost > portfolio.cash_balance)
-        return res.status(400).json({ error: `Insufficient funds — cost $${cost.toFixed(2)}, available $${portfolio.cash_balance.toFixed(2)}` });
+      const cost  = +(quote.price * shares).toFixed(6);
+      const avail = availableCash(req.user.id, game.id, portfolio);
+      if (cost > avail)
+        return res.status(400).json({ error: `Insufficient funds — cost $${cost.toFixed(2)}, available $${avail.toFixed(2)}` });
     }
     applyFill(req.user.id, game.id, symbol, quote.name, type, shares, quote.price);
     const updated = db.prepare('SELECT * FROM portfolios WHERE user_id = ? AND game_id = ?').get(req.user.id, game.id);
@@ -561,21 +578,31 @@ app.post('/api/games/:gameId/orders', requireAuth, loadGame, async (req, res) =>
       message: `${type === 'buy' ? 'Bought' : 'Sold'} ${shares} share(s) of ${symbol} at $${quote.price.toFixed(2)}` });
   }
 
-  // Market order + market closed → check estimated cash then queue
-  if (order_type === 'market' && type === 'buy') {
-    const portfolio = ensurePortfolio(req.user.id, game.id, game.starting_cash);
-    if (quote.price * shares > portfolio.cash_balance)
-      return res.status(400).json({ error: `Estimated cost $${(quote.price * shares).toFixed(2)} exceeds available cash $${portfolio.cash_balance.toFixed(2)}` });
+  // For pending buy orders: compute reservation and check available cash
+  let reservation = 0;
+  if (type === 'buy') {
+    // Limit orders reserve limit_price × shares (max they'll ever pay)
+    // Market orders (queued) reserve current price × shares as the estimate
+    const refPrice = (order_type === 'limit' && limit_price > 0) ? limit_price : quote.price;
+    reservation    = +(refPrice * shares).toFixed(6);
+    const avail    = availableCash(req.user.id, game.id, portfolio);
+    if (reservation > avail)
+      return res.status(400).json({
+        error: `Insufficient funds — reservation $${reservation.toFixed(2)}, available $${avail.toFixed(2)}` +
+               (avail < portfolio.cash_balance ? ` ($${(portfolio.cash_balance - avail).toFixed(2)} already held in other pending orders)` : ''),
+      });
   }
 
-  // Queue the order (market-closed or limit)
+  // Queue the order with its reservation amount
   const { lastInsertRowid } = db.prepare(
-    'INSERT INTO pending_orders (user_id,game_id,symbol,company_name,type,order_type,shares,limit_price) VALUES (?,?,?,?,?,?,?,?)'
-  ).run(req.user.id, game.id, symbol, quote.name, type, order_type, shares, limit_price);
+    'INSERT INTO pending_orders (user_id,game_id,symbol,company_name,type,order_type,shares,limit_price,reserved_amount) VALUES (?,?,?,?,?,?,?,?,?)'
+  ).run(req.user.id, game.id, symbol, quote.name, type, order_type, shares, limit_price, reservation);
 
   const msg = order_type === 'market'
-    ? `Market ${type} order queued — will execute at market open (9:30 AM ET)`
-    : `Limit ${type} order placed — will fill when price ${type === 'buy' ? 'drops to' : 'rises to'} $${limit_price.toFixed(2)} or ${type === 'buy' ? 'below' : 'above'}`;
+    ? `Market ${type} order queued — will execute at market open (9:30 AM ET)` +
+      (type === 'buy' ? ` · $${reservation.toFixed(2)} reserved` : '')
+    : `Limit ${type} order placed at $${limit_price.toFixed(2)}` +
+      (type === 'buy' ? ` · $${reservation.toFixed(2)} reserved` : '');
 
   res.json({ filled: false, pending: true, order_id: lastInsertRowid, message: msg });
 });
@@ -610,13 +637,14 @@ app.post('/api/games/:gameId/trades/buy', requireAuth, loadGame, async (req, res
   if (game.status !== 'active') return res.status(400).json({ error: game.status === 'pending' ? 'Game has not started yet' : 'Game has ended' });
   let quote; try { quote = await getQuote(symbol); } catch (err) { return res.status(400).json({ error: err.message }); }
   if (!isExchangeAllowed(quote.exchange, game.markets)) return res.status(400).json({ error: `${symbol} not in allowed markets` });
-  const portfolio = ensurePortfolio(req.user.id, game.id, game.starting_cash);
-  const cost = +(quote.price * shares).toFixed(6);
-  if (cost > portfolio.cash_balance) return res.status(400).json({ error: `Insufficient funds — cost $${cost.toFixed(2)}, available $${portfolio.cash_balance.toFixed(2)}` });
+  const portfolio   = ensurePortfolio(req.user.id, game.id, game.starting_cash);
+  const cost        = +(quote.price * shares).toFixed(6);
+  const avail       = availableCash(req.user.id, game.id, portfolio);
+  if (cost > avail) return res.status(400).json({ error: `Insufficient funds — cost $${cost.toFixed(2)}, available $${avail.toFixed(2)}` });
   if (!isMarketOpen()) {
-    const { lastInsertRowid } = db.prepare('INSERT INTO pending_orders (user_id,game_id,symbol,company_name,type,order_type,shares) VALUES (?,?,?,?,?,?,?)')
-      .run(req.user.id, game.id, symbol, quote.name, 'buy', 'market', shares);
-    return res.json({ filled: false, pending: true, order_id: lastInsertRowid, message: `Market closed — buy order queued for market open (9:30 AM ET)` });
+    const { lastInsertRowid } = db.prepare('INSERT INTO pending_orders (user_id,game_id,symbol,company_name,type,order_type,shares,reserved_amount) VALUES (?,?,?,?,?,?,?,?)')
+      .run(req.user.id, game.id, symbol, quote.name, 'buy', 'market', shares, cost);
+    return res.json({ filled: false, pending: true, order_id: lastInsertRowid, message: `Market closed — buy order queued · $${cost.toFixed(2)} reserved` });
   }
   applyFill(req.user.id, game.id, symbol, quote.name, 'buy', shares, quote.price);
   const updated = db.prepare('SELECT * FROM portfolios WHERE user_id = ? AND game_id = ?').get(req.user.id, game.id);
