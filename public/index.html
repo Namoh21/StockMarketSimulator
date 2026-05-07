@@ -1163,10 +1163,11 @@ const App = (() => {
       document.getElementById('trade-shares').value = '';
       if (orderType === 'limit') document.getElementById('limit-price').value = '';
       updateTradeTotal();
-      // Show a "Done" state briefly before resetting the button
+      // Show a "Done" state briefly — update className and label span only,
+      // never replace innerHTML (that would remove the span and break setTradeType)
       btn.disabled = false;
       btn.className = 'btn btn-full btn-ghost';
-      btn.innerHTML = '✓ Order Placed';
+      document.getElementById('trade-submit-label').textContent = '✓ Order Placed';
       setTimeout(() => setTradeType(tradeType), 2000);
     } catch(err) {
       errEl.textContent = err.message;
