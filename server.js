@@ -141,7 +141,7 @@ async function yfChart(symbol, period1) {
 
 // ── Price cache (5-min TTL) ──────────────────────────────────────────────────
 const priceCache = new Map();
-const CACHE_TTL  = 5 * 60 * 1000;
+const CACHE_TTL  = 60 * 1000; // 60-second price cache — fresh enough for active trading
 
 async function getQuote(symbol) {
   const sym = symbol.toUpperCase();

@@ -216,6 +216,8 @@
     /* ── Misc ── */
     .spinner { display:inline-block; width:14px; height:14px; border:2px solid transparent; border-top-color:currentColor; border-radius:50%; animation:spin .6s linear infinite; }
     @keyframes spin{to{transform:rotate(360deg);}}
+    .live-dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--green); margin-right:4px; animation:pulse 2s ease-in-out infinite; vertical-align:middle; }
+    @keyframes pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.4;transform:scale(.8);}}
     .empty { text-align:center; padding:44px 20px; color:var(--muted); }
     .empty-icon { font-size:36px; margin-bottom:10px; }
     .error-msg { color:var(--red); font-size:12px; margin-top:7px; }
@@ -309,7 +311,7 @@
 
     <!-- ── PORTFOLIO ───────────────────────────────────────────────────────── -->
     <div id="view-portfolio" class="view">
-      <div class="section-title">Portfolio <span id="dash-updated" class="tag"></span></div>
+      <div class="section-title">Portfolio <span id="dash-updated" class="tag"></span> <span id="dash-live" style="display:none;font-size:11px;font-weight:500;color:var(--green)"><span class="live-dot"></span>LIVE · next update in <span id="dash-countdown">30</span>s</span></div>
       <div id="dash-stats" class="stats-grid"></div>
       <div class="card" style="margin-bottom:16px">
         <div class="section-title" style="margin-bottom:12px">Stock Holdings <span id="holdings-count" class="tag">0</span></div>
@@ -927,9 +929,10 @@ const App = (() => {
     if (el) el.classList.add('active');
     document.querySelectorAll('.nav-btn[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view));
     clearInterval(refreshTimer);
+    if (view !== 'portfolio') { clearInterval(countdownTimer); const l=document.getElementById('dash-live'); if(l) l.style.display='none'; }
     if (view !== 'futures') clearInterval(futuresRefreshTimer);
     if (view==='games')       { loadGames(); }
-    if (view==='portfolio')   { loadPortfolio(); refreshTimer=setInterval(loadPortfolio,60000); }
+    if (view==='portfolio')   { loadPortfolio(); refreshTimer=setInterval(loadPortfolio,30000); }
     if (view==='trade')       { loadTrade(); }
     if (view==='futures')     { loadFutures(); }
     if (view==='leaderboard') { loadLeaderboard(); }
@@ -1064,6 +1067,23 @@ const App = (() => {
     } catch(err) { toast(err.message,'error'); }
   }
 
+  // ── Portfolio countdown ────────────────────────────────────────────────────
+  let countdownTimer = null;
+  function startCountdown(seconds) {
+    clearInterval(countdownTimer);
+    const el = document.getElementById('dash-countdown');
+    const live = document.getElementById('dash-live');
+    if (!el || !live) return;
+    live.style.display = '';
+    let remaining = seconds;
+    el.textContent = remaining;
+    countdownTimer = setInterval(() => {
+      remaining--;
+      if (remaining <= 0) { clearInterval(countdownTimer); el.textContent = '…'; }
+      else el.textContent = remaining;
+    }, 1000);
+  }
+
   // ── Portfolio ──────────────────────────────────────────────────────────────
   async function loadPortfolio() {
     if (!currentGameId) return;
@@ -1086,6 +1106,7 @@ const App = (() => {
         ${data.game.allow_futures ? `<div class="card"><div class="card-title">Futures P&L</div><div class="card-value ${colorClass(data.futures_pnl)}">${data.futures_pnl>=0?'+':''}${fmt$(data.futures_pnl)}</div><div class="card-sub">${(data.futures_positions||[]).length} open</div></div>` : ''}
       `;
       document.getElementById('dash-updated').textContent = 'Updated '+new Date().toLocaleTimeString();
+      startCountdown(30);
       document.getElementById('holdings-count').textContent = data.holdings.length;
 
       const tbody = document.getElementById('holdings-body');
