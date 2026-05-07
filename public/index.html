@@ -242,7 +242,6 @@
     </div>
     <div id="form-register" style="display:none">
       <div class="form-group"><label for="reg-username">Username</label><input id="reg-username" type="text" placeholder="Choose a username" autocomplete="username"></div>
-      <div class="form-group"><label for="reg-email">Email</label><input id="reg-email" type="email" placeholder="your@email.com" autocomplete="email"></div>
       <div class="form-group"><label for="reg-password">Password</label><input id="reg-password" type="password" placeholder="Min 6 characters" autocomplete="new-password"></div>
       <div id="reg-error" class="error-msg"></div>
       <button class="btn btn-primary btn-full" style="margin-top:12px" onclick="App.register()">Create Account</button>
@@ -825,7 +824,7 @@ const App = (() => {
   async function register() {
     document.getElementById('reg-error').textContent = '';
     try {
-      const d = await api('POST','/api/auth/register',{ username:document.getElementById('reg-username').value.trim(), email:document.getElementById('reg-email').value.trim(), password:document.getElementById('reg-password').value });
+      const d = await api('POST','/api/auth/register',{ username:document.getElementById('reg-username').value.trim(), password:document.getElementById('reg-password').value });
       token=d.token; user=d.user; localStorage.setItem('sa_token',token); showApp();
     } catch(err) { document.getElementById('reg-error').textContent=err.message; }
   }

@@ -289,9 +289,10 @@ function availableCash(userId, gameId, portfolio = null) {
 app.post('/api/auth/register', async (req, res) => {
   if (rateLimited(req.ip, 5, 15 * 60 * 1000))
     return res.status(429).json({ error: 'Too many registration attempts — try again in 15 minutes' });
-  const { username, email, password } = req.body || {};
-  if (!username?.trim() || !email?.trim() || !password)
-    return res.status(400).json({ error: 'Username, email, and password are required' });
+  const { username, password } = req.body || {};
+  const email = req.body?.email?.trim() || `${username?.trim()}@local`;
+  if (!username?.trim() || !password)
+    return res.status(400).json({ error: 'Username and password are required' });
   if (password.length < 6)
     return res.status(400).json({ error: 'Password must be at least 6 characters' });
   try {
