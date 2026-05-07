@@ -43,9 +43,10 @@
 
     /* ── Banner ── */
     #game-banner { text-align:center; padding:7px 20px; font-size:13px; font-weight:500; display:none; }
-    #game-banner.pending { background:#1e3a5f; color:#93c5fd; display:block; }
-    #game-banner.active  { background:#14532d; color:#86efac; display:block; }
-    #game-banner.ended   { background:#450a0a; color:#fca5a5; display:block; }
+    #game-banner.pending  { background:#1e3a5f; color:#93c5fd; display:block; }
+    #game-banner.active   { background:#14532d; color:#86efac; display:block; }
+    #game-banner.ending   { background:#3d2a00; color:#fcd34d; display:block; }
+    #game-banner.ended    { background:#450a0a; color:#fca5a5; display:block; }
 
     /* ── Main ── */
     main { flex:1; padding:22px 18px; max-width:1140px; margin:0 auto; width:100%; }
@@ -234,15 +235,15 @@
       <button class="auth-tab" onclick="App.switchAuthTab('register')">Register</button>
     </div>
     <div id="form-login">
-      <div class="form-group"><label>Username</label><input id="login-username" type="text" placeholder="Username" autocomplete="username"></div>
-      <div class="form-group"><label>Password</label><input id="login-password" type="password" placeholder="Password" autocomplete="current-password"></div>
+      <div class="form-group"><label for="login-username">Username</label><input id="login-username" type="text" placeholder="Username" autocomplete="username"></div>
+      <div class="form-group"><label for="login-password">Password</label><input id="login-password" type="password" placeholder="Password" autocomplete="current-password"></div>
       <div id="login-error" class="error-msg"></div>
       <button class="btn btn-primary btn-full" style="margin-top:12px" onclick="App.login()">Sign In</button>
     </div>
     <div id="form-register" style="display:none">
-      <div class="form-group"><label>Username</label><input id="reg-username" type="text" placeholder="Choose a username" autocomplete="username"></div>
-      <div class="form-group"><label>Email</label><input id="reg-email" type="email" placeholder="your@email.com" autocomplete="email"></div>
-      <div class="form-group"><label>Password</label><input id="reg-password" type="password" placeholder="Min 6 characters" autocomplete="new-password"></div>
+      <div class="form-group"><label for="reg-username">Username</label><input id="reg-username" type="text" placeholder="Choose a username" autocomplete="username"></div>
+      <div class="form-group"><label for="reg-email">Email</label><input id="reg-email" type="email" placeholder="your@email.com" autocomplete="email"></div>
+      <div class="form-group"><label for="reg-password">Password</label><input id="reg-password" type="password" placeholder="Min 6 characters" autocomplete="new-password"></div>
       <div id="reg-error" class="error-msg"></div>
       <button class="btn btn-primary btn-full" style="margin-top:12px" onclick="App.register()">Create Account</button>
       <p style="text-align:center;color:var(--muted);font-size:11px;margin-top:10px">First account created becomes admin.</p>
@@ -262,7 +263,7 @@
     </div>
     <div class="nav-links" id="nav-links">
       <button class="nav-btn active" data-view="games" onclick="App.navigate('games')">My Games</button>
-      <button class="nav-btn" data-view="portfolio" onclick="App.navigate('portfolio')" style="display:none" id="nav-portfolio">Portfolio</button>
+      <button class="nav-btn" data-view="portfolio" onclick="App.navigate('portfolio')" style="display:none" id="nav-portfolio">Portfolio <span id="nav-pending-badge" style="display:none;background:var(--gold);color:#000;font-size:10px;font-weight:700;border-radius:10px;padding:1px 6px;margin-left:3px"></span></button>
       <button class="nav-btn" data-view="trade"     onclick="App.navigate('trade')"     style="display:none" id="nav-trade">Trade</button>
       <button class="nav-btn" data-view="futures"   onclick="App.navigate('futures')"   style="display:none" id="nav-futures">Futures</button>
       <button class="nav-btn" data-view="leaderboard" onclick="App.navigate('leaderboard')" style="display:none" id="nav-leaderboard">Leaderboard</button>
@@ -281,11 +282,12 @@
 
     <!-- ── GAMES LOBBY ─────────────────────────────────────────────────────── -->
     <div id="view-games" class="view active">
-      <div class="section-title">Available Games</div>
+      <div class="section-title">Available Games <button class="btn btn-ghost btn-sm" onclick="App.loadGames()" style="font-size:11px">↻ Refresh</button></div>
       <div id="games-list" class="games-grid"></div>
       <div id="games-empty" class="empty" style="display:none">
         <div class="empty-icon">🎮</div>
-        <div class="empty-text">No games yet — ask an admin to create one.</div>
+        <div class="empty-text">No games available yet.</div>
+        <p style="color:var(--muted);font-size:12px;margin-top:6px">Ask your admin to create a simulation, then refresh this page.</p>
       </div>
     </div>
 
@@ -301,7 +303,7 @@
             <tbody id="holdings-body"></tbody>
           </table>
         </div>
-        <div id="holdings-empty" class="empty"><div class="empty-icon">📊</div><div class="empty-text">No holdings yet — go trade!</div></div>
+        <div id="holdings-empty" class="empty"><div class="empty-icon">📊</div><div class="empty-text">No holdings yet.</div><button class="btn btn-primary btn-sm" style="margin-top:10px" onclick="App.navigate('trade')">Search &amp; Buy Stocks →</button></div>
       </div>
       <div class="card" id="pending-orders-card" style="display:none;margin-bottom:16px">
         <div class="section-title" style="margin-bottom:12px">Pending Orders <span id="pending-count" class="tag">0</span></div>
@@ -347,7 +349,7 @@
               <div class="quote-meta-item"><div class="quote-meta-label">High</div><div class="quote-meta-value" id="q-high"></div></div>
               <div class="quote-meta-item"><div class="quote-meta-label">Low</div><div class="quote-meta-value" id="q-low"></div></div>
             </div>
-            <div class="muted" style="font-size:10px">Prices from Yahoo Finance · 5-min cache · Not financial advice</div>
+            <div class="muted" style="font-size:10px">Prices from Yahoo Finance · up to 5-min delay · <span id="q-timestamp"></span> · Not financial advice</div>
           </div>
         </div>
         <div>
@@ -598,7 +600,7 @@
         </div>
         <div class="admin-grid">
           <div class="form-group"><label>Starting Cash ($)</label><input id="admin-cash" type="number" min="100" step="100" placeholder="10000"></div>
-          <div class="form-group"><label>Futures Margin Rate</label><input id="admin-margin" type="number" min="0.01" max="1" step="0.01" placeholder="0.20" title="e.g. 0.20 = 20% of notional"></div>
+          <div class="form-group"><label for="admin-margin">Futures Margin Rate</label><input id="admin-margin" type="number" min="0.01" max="1" step="0.01" placeholder="0.20"><div class="shares-hint">Fraction of notional value held as collateral — e.g. <strong>0.20</strong> = 20%, <strong>0.50</strong> = 50%</div></div>
         </div>
         <div class="form-group">
           <label>Allowed Markets</label>
@@ -631,7 +633,7 @@
 
 <!-- ══ SELL MODAL ═════════════════════════════════════════════════════════════ -->
 <div id="sell-modal" class="modal-backdrop" style="display:none" onclick="if(event.target===this)App.closeSellModal()">
-  <div class="modal-card">
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="sell-modal-title">
     <div class="modal-header"><h3 id="sell-modal-title">Sell Stock</h3><button class="modal-close" onclick="App.closeSellModal()">✕</button></div>
     <div class="modal-info" id="sell-modal-info"></div>
     <div class="form-group"><label>Shares to Sell</label>
@@ -639,6 +641,7 @@
     </div>
     <div style="background:var(--bg3);border-radius:6px;padding:11px;margin-bottom:12px;font-size:12px">
       <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span class="muted">Proceeds</span><span id="sell-modal-total" style="font-weight:700;color:var(--green)">$0.00</span></div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span class="muted">Realized P&amp;L</span><span id="sell-modal-pnl" style="font-weight:700;display:none"></span></div>
       <div style="display:flex;justify-content:space-between"><span class="muted">Cash After</span><span id="sell-modal-cash-after">—</span></div>
     </div>
     <div id="sell-modal-error" class="error-msg" style="margin-bottom:8px"></div>
@@ -648,7 +651,7 @@
 
 <!-- ══ DELETE GAME MODAL ══════════════════════════════════════════════════════ -->
 <div id="delete-game-modal" class="modal-backdrop" style="display:none" onclick="if(event.target===this)App.closeDeleteModal()">
-  <div class="modal-card" style="max-width:380px">
+  <div class="modal-card" style="max-width:380px" role="dialog" aria-modal="true" aria-label="Delete Simulation">
     <div class="modal-header"><h3>Delete Simulation</h3><button class="modal-close" onclick="App.closeDeleteModal()">✕</button></div>
     <div class="warn-box" id="delete-modal-info"></div>
     <p style="font-size:13px;color:var(--muted);margin-bottom:16px">This permanently removes the game, all portfolios, holdings, trades, and futures positions. <strong style="color:var(--red)">This cannot be undone.</strong></p>
@@ -661,7 +664,7 @@
 
 <!-- ══ CLOSE FUTURES MODAL ════════════════════════════════════════════════════ -->
 <div id="close-futures-modal" class="modal-backdrop" style="display:none" onclick="if(event.target===this)App.closeCloseFuturesModal()">
-  <div class="modal-card">
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="cfm-title">
     <div class="modal-header"><h3 id="cfm-title">Close Position</h3><button class="modal-close" onclick="App.closeCloseFuturesModal()">✕</button></div>
     <div class="modal-info" id="cfm-info"></div>
     <div class="form-group"><label>Contracts to Close</label>
@@ -677,10 +680,15 @@
   </div>
 </div>
 
-<div id="toast"></div>
+<div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
 <script>
 const App = (() => {
+  // ── HTML escape (prevents XSS in innerHTML template strings) ─────────────
+  function esc(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+
   // ── State ──────────────────────────────────────────────────────────────────
   let token = localStorage.getItem('sa_token');
   let user  = null;
@@ -714,7 +722,7 @@ const App = (() => {
   function toast(msg, type = 'info') {
     const el = document.getElementById('toast');
     el.textContent = msg; el.className = `show ${type}`;
-    clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('show'), 3500);
+    clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('show'), type === 'error' ? 6000 : 4500);
   }
 
   // ── Format helpers ─────────────────────────────────────────────────────────
@@ -746,7 +754,11 @@ const App = (() => {
     if (!currentGame) { el.className=''; return; }
     const s = currentGame.status;
     if (s==='pending') { el.textContent=`⏳ "${currentGame.title}" starts ${fmtDateShort(currentGame.start_date)}`; el.className='pending'; }
-    else if (s==='active') { const d=daysBetween(new Date().toISOString().split('T')[0], currentGame.end_date); el.textContent=`🟢 "${currentGame.title}" — ${d} day${d!==1?'s':''} remaining`; el.className='active'; }
+    else if (s==='active') {
+      const d = daysBetween(new Date().toISOString().split('T')[0], currentGame.end_date);
+      if (d <= 1) { el.textContent=`🔴 "${currentGame.title}" — ENDS ${d===0?'TODAY':'TOMORROW'} at 4:00 PM ET — place your final trades!`; el.className='ending'; }
+      else        { el.textContent=`🟢 "${currentGame.title}" — ${d} day${d!==1?'s':''} remaining`; el.className='active'; }
+    }
     else if (s==='ended') { el.textContent=`🏁 "${currentGame.title}" ended ${fmtDateShort(currentGame.end_date)}`; el.className='ended'; }
     else { el.className=''; }
   }
@@ -758,6 +770,7 @@ const App = (() => {
     if (el) el.classList.add('active');
     document.querySelectorAll('.nav-btn[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view));
     clearInterval(refreshTimer);
+    if (view !== 'futures') clearInterval(futuresRefreshTimer);
     if (view==='games')       { loadGames(); }
     if (view==='portfolio')   { loadPortfolio(); refreshTimer=setInterval(loadPortfolio,60000); }
     if (view==='trade')       { loadTrade(); }
@@ -783,6 +796,7 @@ const App = (() => {
 
   function exitGame() {
     clearInterval(refreshTimer);
+    clearInterval(futuresRefreshTimer);
     currentGameId = null; currentGame = null; portfolio = null;
     currentSymbol = null; currentQuote = null; selectedFutures = null;
     document.getElementById('nav-game-context').style.display = 'none';
@@ -847,16 +861,22 @@ const App = (() => {
         const canJoin = g.status !== 'ended';
         const btnLabel = g.user_joined ? 'Enter Game' : (canJoin ? 'Join &amp; Enter' : 'View Results');
         const btnClass = g.user_joined ? 'btn-primary' : (canJoin ? 'btn-green' : 'btn-ghost');
+        const today = new Date().toISOString().split('T')[0];
+        const daysLeft = g.status === 'active' ? daysBetween(today, g.end_date) : null;
+        const daysTag = daysLeft !== null
+          ? (daysLeft <= 1 ? `<span class="game-tag" style="color:var(--gold);border-color:var(--gold)">${daysLeft===0?'Ends today!':'Last day!'}</span>`
+            : `<span class="game-tag">${daysLeft}d left</span>`)
+          : '';
         return `<div class="game-card">
-          <div class="game-card-header"><div class="game-card-title">${g.title}</div>${statusBadge}</div>
+          <div class="game-card-header"><div class="game-card-title">${esc(g.title)}</div>${statusBadge}</div>
           <div class="game-card-meta">
             <span>📅 ${fmtDateShort(g.start_date)} → ${fmtDateShort(g.end_date)}</span>
             <span>💵 Starting cash: <strong>${fmt$(g.starting_cash,0)}</strong></span>
-            <span>📊 Markets: ${markets}</span>
+            <span>📊 Markets: ${esc(markets)}</span>
             <span>👥 ${g.player_count} player${g.player_count!==1?'s':''}</span>
           </div>
           <div class="game-card-footer">
-            <div style="display:flex;gap:6px;flex-wrap:wrap">${futures}</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">${futures}${daysTag}</div>
             <button class="btn btn-sm ${btnClass}" onclick="App.joinAndEnter(${g.id})">${btnLabel}</button>
           </div>
         </div>`;
@@ -905,16 +925,16 @@ const App = (() => {
       } else {
         document.getElementById('holdings-empty').style.display='none'; document.getElementById('holdings-table').style.display='';
         tbody.innerHTML = data.holdings.map(h => `<tr>
-          <td><strong>${h.symbol}</strong></td>
-          <td class="muted" style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h.company_name||'—'}</td>
+          <td><strong>${esc(h.symbol)}</strong></td>
+          <td class="muted" style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(h.company_name||'—')}</td>
           <td class="text-right">${fmtShares(h.shares)}</td>
           <td class="text-right muted">${fmt$(h.avg_cost)}</td>
           <td class="text-right">${fmt$(h.current_price)}</td>
           <td class="text-right">${fmt$(h.market_value)}</td>
-          <td class="text-right ${colorClass(h.gain_loss)}">${h.gain_loss>=0?'+':''}${fmt$(h.gain_loss)}<br><span style="font-size:11px">${fmtPct(h.gain_loss_pct)}</span></td>
+          <td class="text-right ${colorClass(h.gain_loss)}">${h.gain_loss>=0?'▲ +':'▼ '}${fmt$(h.gain_loss)}<br><span style="font-size:11px">${fmtPct(h.gain_loss_pct)}</span></td>
           <td><div style="display:flex;gap:5px;justify-content:flex-end">
-            <button class="btn btn-green btn-sm" onclick="App.loadQuoteForSymbol('${h.symbol}')">Buy</button>
-            <button class="btn btn-red btn-sm" onclick="App.openSellModal('${h.symbol}',${h.shares},${h.current_price},'${(h.company_name||'').replace(/'/g,"\\'")}')">Sell</button>
+            <button class="btn btn-green btn-sm" data-symbol="${esc(h.symbol)}" onclick="App.loadQuoteForSymbol(this.dataset.symbol)">Buy</button>
+            <button class="btn btn-red btn-sm" data-symbol="${esc(h.symbol)}" data-shares="${h.shares}" data-price="${h.current_price}" data-name="${esc(h.company_name||'')}" onclick="App.openSellModal(this.dataset.symbol,parseFloat(this.dataset.shares),parseFloat(this.dataset.price),this.dataset.name)">Sell</button>
           </div></td>
         </tr>`).join('');
       }
@@ -928,28 +948,36 @@ const App = (() => {
         const poCard  = document.getElementById('pending-orders-card');
         poCard.style.display = allShow.length ? '' : 'none';
         document.getElementById('pending-count').textContent = pending.length;
+        // Update nav badge
+        const navBadge = document.getElementById('nav-pending-badge');
+        if (navBadge) { navBadge.textContent = pending.length || ''; navBadge.style.display = pending.length ? '' : 'none'; }
         const poBody = document.getElementById('pending-orders-body');
         const poTbl  = document.getElementById('pending-orders-table');
         const poEmp  = document.getElementById('pending-orders-empty');
         if (!allShow.length) { poTbl.style.display='none'; poEmp.style.display=''; }
         else {
           poTbl.style.display=''; poEmp.style.display='none';
-          poBody.innerHTML = allShow.map(o => {
+          const makeRow = (o, highlight) => {
             const isPending = o.status === 'pending';
             const statusColor = {pending:'gold',filled:'green',cancelled:'muted',rejected:'red'}[o.status]||'muted';
             const limitCol = o.order_type === 'limit' ? fmt$(o.limit_price) : '<span class="muted">—</span>';
             const fillInfo = o.filled_price ? `Filled @ ${fmt$(o.filled_price)}` : '';
-            return `<tr>
+            const rowStyle = highlight ? ' style="background:rgba(245,158,11,0.06)"' : '';
+            return `<tr${rowStyle}>
               <td class="muted" style="font-size:12px">${fmtDate(o.submitted_at)}</td>
-              <td><span class="pill pill-${o.type}">${o.type.toUpperCase()}</span></td>
-              <td><strong>${o.symbol}</strong><br><span class="muted" style="font-size:11px">${o.company_name||''}</span></td>
+              <td><span class="pill pill-${o.type==='buy'?'buy':'sell'}">${o.type.toUpperCase()}</span></td>
+              <td><strong>${esc(o.symbol)}</strong><br><span class="muted" style="font-size:11px">${esc(o.company_name||'')}</span></td>
               <td>${o.order_type==='limit'?'Limit':'Market'}</td>
               <td class="text-right">${fmtShares(o.shares)}</td>
               <td class="text-right">${limitCol}</td>
-              <td><span class="${statusColor}">${o.status.toUpperCase()}</span>${fillInfo?`<br><span class="muted" style="font-size:11px">${fillInfo}</span>`:''}${o.reject_reason?`<br><span class="red" style="font-size:11px">${o.reject_reason}</span>`:''}</td>
-              <td>${isPending?`<button class="btn btn-ghost btn-sm" onclick="App.cancelOrder(${o.id})">Cancel</button>`:''}</td>
+              <td><span class="${statusColor}">${o.status.toUpperCase()}</span>${fillInfo?`<br><span class="muted" style="font-size:11px">${esc(fillInfo)}</span>`:''}${o.reject_reason?`<br><span class="red" style="font-size:11px">${esc(o.reject_reason)}</span>`:''}</td>
+              <td>${isPending?`<button class="btn btn-ghost btn-sm" data-order-id="${o.id}" onclick="App.cancelOrder(parseInt(this.dataset.orderId))">Cancel</button>`:''}</td>
             </tr>`;
-          }).join('');
+          };
+          const divider = pending.length && recent.length
+            ? `<tr><td colspan="8" style="padding:6px 10px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;background:var(--bg3)">Recent (filled / cancelled)</td></tr>`
+            : '';
+          poBody.innerHTML = pending.map(o => makeRow(o, true)).join('') + divider + recent.map(o => makeRow(o, false)).join('');
         }
       } catch {}
 
@@ -965,15 +993,19 @@ const App = (() => {
         } else {
           document.getElementById('futures-empty').style.display='none'; document.getElementById('futures-table').style.display='';
           ftbody.innerHTML = fp.map(f => `<tr>
-            <td><strong>${f.symbol}</strong></td>
-            <td class="muted">${f.name||'—'}</td>
-            <td><span class="pill pill-${f.direction}">${f.direction.toUpperCase()}</span></td>
+            <td><strong>${esc(f.symbol)}</strong></td>
+            <td class="muted">${esc(f.name||'—')}</td>
+            <td><span class="pill pill-${f.direction==='long'?'long':'short'}">${f.direction.toUpperCase()}</span></td>
             <td class="text-right">${fmtShares(f.contracts)}</td>
             <td class="text-right muted">${fmt$(f.entry_price)}</td>
             <td class="text-right">${fmt$(f.current_price)}</td>
             <td class="text-right ${colorClass(f.unrealized_pnl)}">${f.unrealized_pnl>=0?'+':''}${fmt$(f.unrealized_pnl)}</td>
             <td class="text-right">${fmt$(f.margin_held)}</td>
-            <td><button class="btn btn-red btn-sm" onclick="App.openCloseFuturesModal('${f.symbol}',${f.contracts},${f.entry_price},'${f.direction}',${f.margin_held},${f.current_price||f.entry_price},'${f.name||f.symbol}')">Close</button></td>
+            <td><button class="btn btn-red btn-sm"
+              data-symbol="${esc(f.symbol)}" data-contracts="${f.contracts}" data-entry="${f.entry_price}"
+              data-dir="${esc(f.direction)}" data-margin="${f.margin_held}"
+              data-price="${f.current_price||f.entry_price}" data-name="${esc(f.name||f.symbol)}"
+              onclick="App.openCloseFuturesModal(this.dataset.symbol,parseFloat(this.dataset.contracts),parseFloat(this.dataset.entry),this.dataset.dir,parseFloat(this.dataset.margin),parseFloat(this.dataset.price),this.dataset.name)">Close</button></td>
           </tr>`).join('');
         }
       } else { fCard.style.display='none'; }
@@ -1027,9 +1059,17 @@ const App = (() => {
     } else if (ot === 'limit') {
       const lph  = document.getElementById('limit-price-hint');
       const lp   = parseFloat(document.getElementById('limit-price')?.value) || 0;
-      if (lph) lph.textContent = tradeType === 'buy'
-        ? `Buy when price drops to $${lp.toFixed(2)} or below`
-        : `Sell when price rises to $${lp.toFixed(2)} or above`;
+      if (lph) {
+        if (lp > 0) {
+          lph.textContent = tradeType === 'buy'
+            ? `✓ Buy when price drops to ${fmt$(lp)} or below`
+            : `✓ Sell when price rises to ${fmt$(lp)} or above`;
+          lph.style.color = 'var(--green)';
+        } else {
+          lph.textContent = tradeType === 'buy' ? 'Enter the max price you\'re willing to pay' : 'Enter the min price you\'ll accept';
+          lph.style.color = '';
+        }
+      }
       document.getElementById('trade-status-notice').style.display = 'none';
     } else {
       document.getElementById('trade-status-notice').style.display = 'none';
@@ -1063,7 +1103,7 @@ const App = (() => {
     try {
       const r = await api('GET',`/api/stocks/search?q=${encodeURIComponent(q)}`);
       if (!r.length) { dd.innerHTML='<div class="search-item muted">No results</div>'; dd.style.display='block'; return; }
-      dd.innerHTML = r.map(s=>`<div class="search-item" onclick="App.selectStock('${s.symbol}')"><div><div class="search-sym">${s.symbol}</div><div class="search-name">${s.name||''}</div></div><div class="search-exch">${s.exchange||''}</div></div>`).join('');
+      dd.innerHTML = r.map(s=>`<div class="search-item" data-symbol="${esc(s.symbol)}" onclick="App.selectStock(this.dataset.symbol)"><div><div class="search-sym">${esc(s.symbol)}</div><div class="search-name">${esc(s.name||'')}</div></div><div class="search-exch">${esc(s.exchange||'')}</div></div>`).join('');
       dd.style.display='block';
     } catch(err) { dd.innerHTML=`<div class="search-item" style="color:var(--red)">${err.message}</div>`; dd.style.display='block'; }
   }
@@ -1109,6 +1149,8 @@ const App = (() => {
       document.getElementById('q-symbol').textContent    = q.symbol;
       document.getElementById('q-name').textContent      = q.name;
       document.getElementById('q-exchange').textContent  = `${q.exchange} · ${q.marketState}`;
+      const qts = document.getElementById('q-timestamp');
+      if (qts) qts.textContent = 'fetched ' + new Date().toLocaleTimeString();
       document.getElementById('q-price').textContent     = fmt$(q.price);
       const chEl = document.getElementById('q-change');
       chEl.textContent = `${q.change >= 0 ? '+' : ''}${fmt$(q.change)} (${fmtPct(q.changePercent)})`;
@@ -1285,33 +1327,53 @@ const App = (() => {
   }
 
   // ── Futures ────────────────────────────────────────────────────────────────
-  let allContracts=[], activeCategory='All';
+  let allContracts=[], activeCategory='All', futuresRefreshTimer=null;
 
   async function loadFutures() {
     if(!currentGameId||!currentGame?.allow_futures) return;
     document.getElementById('futures-margin-rate').textContent=`${Math.round((currentGame.futures_margin||0.2)*100)}% margin`;
     document.getElementById('ft-cash').textContent=fmt$(portfolio?.available_cash??portfolio?.cash_balance??0);
+    // Expand education panel on first visit
+    const learnEl = document.getElementById('futures-learn');
+    if (learnEl && !localStorage.getItem('sa_futures_seen')) {
+      learnEl.setAttribute('open','');
+      localStorage.setItem('sa_futures_seen','1');
+    }
     try {
       allContracts = await api('GET','/api/futures/contracts');
-      renderFuturesCats(); renderFuturesGrid('All');
+      renderFuturesCats(); renderFuturesGrid(activeCategory);
+      // Auto-refresh contract prices every 30s while futures tab is active
+      clearInterval(futuresRefreshTimer);
+      futuresRefreshTimer = setInterval(async () => {
+        if (!document.getElementById('view-futures').classList.contains('active')) return;
+        try {
+          allContracts = await api('GET','/api/futures/contracts');
+          renderFuturesGrid(activeCategory);
+          // Update selected contract price live
+          if (selectedFutures) {
+            const refreshed = allContracts.find(c=>c.symbol===selectedFutures.symbol);
+            if (refreshed) { selectedFutures=refreshed; updateFuturesTotal(); }
+          }
+        } catch {}
+      }, 30_000);
     } catch(err){ console.error(err); }
   }
 
   function renderFuturesCats() {
     const cats=['All',...new Set(allContracts.map(c=>c.category))];
-    document.getElementById('futures-cat-tabs').innerHTML=cats.map(c=>`<button class="futures-cat-btn${c==='All'?'active':''}" onclick="App.filterFutures('${c}')">${c}</button>`).join('');
+    document.getElementById('futures-cat-tabs').innerHTML=cats.map(c=>`<button class="futures-cat-btn${c==='All'?' active':''}" data-cat="${esc(c)}" onclick="App.filterFutures(this.dataset.cat)">${esc(c)}</button>`).join('');
   }
 
   function filterFutures(cat) {
     activeCategory=cat;
-    document.querySelectorAll('.futures-cat-btn').forEach(b=>b.classList.toggle('active',b.textContent===cat));
+    document.querySelectorAll('.futures-cat-btn').forEach(b=>b.classList.toggle('active',b.dataset.cat===cat));
     renderFuturesGrid(cat);
   }
 
   function renderFuturesGrid(cat) {
     const list=cat==='All'?allContracts:allContracts.filter(c=>c.category===cat);
-    document.getElementById('futures-contracts-grid').innerHTML=list.map(c=>`<div class="futures-card${selectedFutures?.symbol===c.symbol?' selected':''}" onclick="App.selectFutures('${c.symbol}')">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start"><div><div class="futures-card-sym">${c.symbol}</div><div class="futures-card-name">${c.name}</div></div><span style="font-size:10px;color:var(--muted)">${c.category}</span></div>
+    document.getElementById('futures-contracts-grid').innerHTML=list.map(c=>`<div class="futures-card${selectedFutures?.symbol===c.symbol?' selected':''}" data-symbol="${esc(c.symbol)}" onclick="App.selectFutures(this.dataset.symbol)">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start"><div><div class="futures-card-sym">${esc(c.symbol)}</div><div class="futures-card-name">${esc(c.name)}</div></div><span style="font-size:10px;color:var(--muted)">${esc(c.category)}</span></div>
       <div class="futures-card-price ${c.price!=null?colorClass(c.change):'muted'}">${c.price!=null?fmt$(c.price):'—'}</div>
       <div class="futures-card-change ${colorClass(c.change)}">${c.price!=null?fmtPct(c.changePercent):''}</div>
     </div>`).join('');
@@ -1333,7 +1395,7 @@ const App = (() => {
     // Show existing position warning
     const openEl=document.getElementById('ft-open-pos');
     const pos=portfolio?.futures_positions?.find(p=>p.symbol===symbol&&p.contracts>0);
-    if(pos){openEl.style.display='';openEl.innerHTML=`You have an open <strong>${pos.direction.toUpperCase()}</strong> position: ${fmtShares(pos.contracts)} contract(s) at entry $${fmt$(pos.entry_price)} · Unrealized P&L: <strong class="${colorClass(pos.unrealized_pnl)}">${pos.unrealized_pnl>=0?'+':''}${fmt$(pos.unrealized_pnl)}</strong>`;}
+    if(pos){openEl.style.display='';openEl.innerHTML=`You have an open <strong>${esc(pos.direction.toUpperCase())}</strong> position: ${fmtShares(pos.contracts)} contract(s) at entry $${fmt$(pos.entry_price)} · Unrealized P&L: <strong class="${colorClass(pos.unrealized_pnl)}">${pos.unrealized_pnl>=0?'+':''}${fmt$(pos.unrealized_pnl)}</strong>`;}
     else{openEl.style.display='none';}
     document.getElementById('ft-contracts').value='';
     updateFuturesTotal();
@@ -1446,12 +1508,12 @@ const App = (() => {
       if(!rows.length){tbody.innerHTML='';document.getElementById('leaderboard-empty').style.display='';return;}
       document.getElementById('leaderboard-empty').style.display='none';
       tbody.innerHTML=rows.map(r=>`<tr class="${r.rank<=3?`rank-${r.rank}`:''} ${r.username===user?.username?'rank-self':''}">
-        <td><strong>#${r.rank}</strong></td><td>${r.username}</td>
+        <td><strong>#${r.rank}</strong></td><td>${esc(r.username)}</td>
         <td class="text-right">${fmt$(r.cash_balance)}</td>
         <td class="text-right">${fmt$(r.stock_value)}</td>
         <td class="text-right ${colorClass(r.futures_pnl)}">${r.futures_pnl>=0?'+':''}${fmt$(r.futures_pnl)}</td>
         <td class="text-right"><strong>${fmt$(r.total_value)}</strong></td>
-        <td class="text-right ${colorClass(r.gain)}">${r.gain>=0?'+':''}${fmt$(r.gain)}<br><span style="font-size:11px">${fmtPct(r.gain_pct)}</span></td>
+        <td class="text-right ${colorClass(r.gain)}">${r.gain>=0?'▲ +':'▼ '}${fmt$(r.gain)}<br><span style="font-size:11px">${fmtPct(r.gain_pct)}</span></td>
       </tr>`).join('');
     } catch(err){console.error(err);}
   }
@@ -1469,8 +1531,8 @@ const App = (() => {
       else{document.getElementById('history-empty').style.display='none';
         tbody.innerHTML=txns.map(t=>`<tr>
           <td class="muted">${fmtDate(t.executed_at)}</td>
-          <td><span class="pill pill-${t.type}">${t.type.toUpperCase()}</span></td>
-          <td><strong>${t.symbol}</strong></td><td class="muted">${t.company_name||'—'}</td>
+          <td><span class="pill pill-${t.type==='buy'?'buy':'sell'}">${t.type.toUpperCase()}</span></td>
+          <td><strong>${esc(t.symbol)}</strong></td><td class="muted">${esc(t.company_name||'—')}</td>
           <td class="text-right">${fmtShares(t.shares)}</td>
           <td class="text-right">${fmt$(t.price)}</td>
           <td class="text-right ${t.type==='buy'?'red':'green'}">${t.type==='buy'?'−':'+'}${fmt$(t.total)}</td>
@@ -1482,8 +1544,8 @@ const App = (() => {
           fb.innerHTML=ftxns.map(t=>`<tr>
             <td class="muted">${fmtDate(t.executed_at)}</td>
             <td><span class="pill pill-${t.action}">${t.action.toUpperCase()}</span></td>
-            <td><strong>${t.symbol}</strong></td>
-            <td><span class="pill pill-${t.direction}">${t.direction.toUpperCase()}</span></td>
+            <td><strong>${esc(t.symbol)}</strong></td>
+            <td><span class="pill pill-${t.direction==='long'?'long':'short'}">${t.direction.toUpperCase()}</span></td>
             <td class="text-right">${fmtShares(t.contracts)}</td>
             <td class="text-right">${fmt$(t.price)}</td>
             <td class="text-right ${colorClass(t.realized_pnl)}">${t.realized_pnl!==0?(t.realized_pnl>=0?'+':'')+ fmt$(t.realized_pnl):'—'}</td>
@@ -1501,7 +1563,7 @@ const App = (() => {
         <div class="table-wrap"><table>
           <thead><tr><th>Title</th><th>Status</th><th>Dates</th><th>Starting Cash</th><th>Players</th><th>Futures</th><th></th></tr></thead>
           <tbody>${games.map(g=>`<tr>
-            <td><strong>${g.title}</strong></td>
+            <td><strong>${esc(g.title)}</strong></td>
             <td><span class="badge-status badge-${g.status}">${g.status.toUpperCase()}</span>${g.is_active?'':' <span class="muted">(hidden)</span>'}</td>
             <td class="muted">${fmtDateShort(g.start_date)} → ${fmtDateShort(g.end_date)}</td>
             <td>${fmt$(g.starting_cash,0)}</td>
@@ -1509,13 +1571,13 @@ const App = (() => {
             <td>${g.allow_futures?'<span class="green">✓</span>':'<span class="muted">—</span>'}</td>
             <td><div style="display:flex;gap:5px">
               <button class="btn btn-ghost btn-sm" onclick="App.editGame(${g.id})">Edit</button>
-              <button class="btn btn-red btn-sm" onclick="App.openDeleteModal(${g.id},'${g.title.replace(/'/g,"\\'")}',${g.player_count})">Delete</button>
+              <button class="btn btn-red btn-sm" data-id="${g.id}" data-title="${esc(g.title)}" data-count="${g.player_count}" onclick="App.openDeleteModal(parseInt(this.dataset.id),this.dataset.title,parseInt(this.dataset.count))">Delete</button>
             </div></td>
           </tr>`).join('')}</tbody>
         </table></div>` : '<div class="muted" style="margin-bottom:16px">No simulations yet.</div>';
       // Players
       document.getElementById('admin-players-body').innerHTML=players.map(p=>`<tr>
-        <td><strong>${p.username}</strong></td><td class="muted">${p.email}</td>
+        <td><strong>${esc(p.username)}</strong></td><td class="muted">${esc(p.email)}</td>
         <td>${p.is_admin?'<span class="badge badge-admin">ADMIN</span>':'<span class="muted">Player</span>'}</td>
         <td class="muted">${fmtDate(p.created_at)}</td>
       </tr>`).join('');
@@ -1595,7 +1657,13 @@ const App = (() => {
   function openSellModal(symbol,shares,price,companyName){
     smSymbol=symbol;smMaxShares=parseFloat(shares);smPrice=parseFloat(price);
     document.getElementById('sell-modal-title').textContent=`Sell ${symbol}`;
-    document.getElementById('sell-modal-info').innerHTML=`<strong>${companyName||symbol}</strong><br>You own <strong>${fmtShares(smMaxShares)}</strong> share(s) · Price <strong>${fmt$(smPrice)}</strong><br>Market value <strong>${fmt$(smMaxShares*smPrice)}</strong>`;
+    const h = portfolio?.holdings?.find(x=>x.symbol===symbol);
+    const avgCost = h?.avg_cost ?? null;
+    const perSharePnl = avgCost ? smPrice - avgCost : null;
+    const pnlHint = perSharePnl !== null
+      ? `<br><span class="${perSharePnl>=0?'green':'red'}" style="font-size:12px">${perSharePnl>=0?'▲ Profit':'▼ Loss'} ${fmt$(Math.abs(perSharePnl))} per share vs avg cost ${fmt$(avgCost)}</span>`
+      : '';
+    document.getElementById('sell-modal-info').innerHTML=`<strong>${esc(companyName||symbol)}</strong><br>You own <strong>${fmtShares(smMaxShares)}</strong> share(s) · Current price <strong>${fmt$(smPrice)}</strong>${pnlHint}`;
     document.getElementById('sell-modal-shares').value=''; document.getElementById('sell-modal-total').textContent='$0.00';
     document.getElementById('sell-modal-cash-after').textContent='—'; document.getElementById('sell-modal-error').textContent='';
     document.getElementById('sell-modal-label').textContent=`Sell ${symbol}`; document.getElementById('sell-modal-btn').disabled=false;
@@ -1603,7 +1671,17 @@ const App = (() => {
     setTimeout(()=>document.getElementById('sell-modal-shares').focus(),50);
   }
   function closeSellModal(){document.getElementById('sell-modal').style.display='none';smSymbol=null;}
-  function updateSellModalTotal(){const s=parseFloat(document.getElementById('sell-modal-shares').value)||0;document.getElementById('sell-modal-total').textContent=fmt$(s*smPrice);document.getElementById('sell-modal-cash-after').textContent=fmt$((portfolio?.cash_balance??0)+s*smPrice);}
+  function updateSellModalTotal(){
+    const s=parseFloat(document.getElementById('sell-modal-shares').value)||0;
+    const proceeds=s*smPrice;
+    document.getElementById('sell-modal-total').textContent=fmt$(proceeds);
+    document.getElementById('sell-modal-cash-after').textContent=fmt$((portfolio?.cash_balance??0)+proceeds);
+    const h=portfolio?.holdings?.find(x=>x.symbol===smSymbol);
+    const totalPnl=h?.avg_cost?proceeds-s*h.avg_cost:null;
+    const pnlEl=document.getElementById('sell-modal-pnl');
+    if(pnlEl&&totalPnl!==null&&s>0){pnlEl.textContent=`${totalPnl>=0?'▲ Gain':'▼ Loss'}: ${fmt$(Math.abs(totalPnl))} total`;pnlEl.className=totalPnl>=0?'green':'red';pnlEl.style.display='';}
+    else if(pnlEl){pnlEl.style.display='none';}
+  }
   function setSellModalMax(){document.getElementById('sell-modal-shares').value=smMaxShares;updateSellModalTotal();}
   async function executeSellModal(){
     const s=parseFloat(document.getElementById('sell-modal-shares').value),errEl=document.getElementById('sell-modal-error');errEl.textContent='';
@@ -1619,7 +1697,7 @@ const App = (() => {
     cfmSymbol=symbol;cfmMax=parseFloat(contracts);cfmEntry=parseFloat(entry);cfmDir=dir;cfmMarginHeld=parseFloat(marginHeld);
     const unrealized=(dir==='long'?(currentPrice-entry):(entry-currentPrice))*contracts;
     document.getElementById('cfm-title').textContent=`Close ${symbol} ${dir.toUpperCase()}`;
-    document.getElementById('cfm-info').innerHTML=`<strong>${name||symbol}</strong> · <span class="pill pill-${dir}">${dir.toUpperCase()}</span><br>Open contracts: <strong>${fmtShares(cfmMax)}</strong> at entry <strong>${fmt$(cfmEntry)}</strong><br>Current price: <strong>${fmt$(currentPrice)}</strong> · Unrealized P&L: <strong class="${colorClass(unrealized)}">${unrealized>=0?'+':''}${fmt$(unrealized)}</strong>`;
+    document.getElementById('cfm-info').innerHTML=`<strong>${esc(name||symbol)}</strong> · <span class="pill pill-${esc(dir)}">${esc(dir.toUpperCase())}</span><br>Open contracts: <strong>${fmtShares(cfmMax)}</strong> at entry <strong>${fmt$(cfmEntry)}</strong><br>Current price: <strong>${fmt$(currentPrice)}</strong> · Unrealized P&L: <strong class="${colorClass(unrealized)}">${unrealized>=0?'+':''}${fmt$(unrealized)}</strong>`;
     document.getElementById('cfm-contracts').value=''; document.getElementById('cfm-pnl').textContent='$0.00';
     document.getElementById('cfm-margin').textContent='$0.00'; document.getElementById('cfm-cash-after').textContent='—';
     document.getElementById('cfm-error').textContent=''; document.getElementById('cfm-label').textContent=`Close ${symbol}`;
@@ -1652,7 +1730,7 @@ const App = (() => {
     deleteGameId = id;
     const warn = playerCount > 0
       ? `⚠️ <strong>${playerCount} player${playerCount!==1?'s have':' has'}</strong> joined this game. All their portfolios and trade history will be permanently erased.`
-      : `You are about to delete "<strong>${title}</strong>".`;
+      : `You are about to delete "<strong>${esc(title)}</strong>".`;
     document.getElementById('delete-modal-info').innerHTML = warn;
     document.getElementById('delete-confirm-btn').disabled = false;
     document.getElementById('delete-confirm-btn').textContent = 'Delete Permanently';
@@ -1700,7 +1778,7 @@ const App = (() => {
 
   return {
     navigate, login, register, logout, switchAuthTab,
-    joinAndEnter, exitGame, loadQuoteForSymbol,
+    loadGames, joinAndEnter, exitGame, loadQuoteForSymbol,
     onSearchInput, onSearchFocus, selectStock,
     setTradeType, executeTrade, setMaxShares, updateTradeTotal, onOrderTypeChange, cancelOrder,
     filterFutures, selectFutures, setFuturesDir, updateFuturesTotal, updateFuturesSim, setMaxFuturesContracts, openFuturesPosition,

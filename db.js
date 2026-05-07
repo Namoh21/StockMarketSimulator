@@ -78,9 +78,9 @@ db.exec(`
     symbol       TEXT    NOT NULL,
     name         TEXT    NOT NULL DEFAULT '',
     direction    TEXT    NOT NULL CHECK(direction IN ('long','short')),
-    contracts    REAL    NOT NULL DEFAULT 0,
-    entry_price  REAL    NOT NULL,
-    margin_held  REAL    NOT NULL DEFAULT 0,
+    contracts    REAL    NOT NULL DEFAULT 0   CHECK(contracts >= 0),
+    entry_price  REAL    NOT NULL             CHECK(entry_price > 0),
+    margin_held  REAL    NOT NULL DEFAULT 0   CHECK(margin_held >= 0),
     opened_at    TEXT    NOT NULL DEFAULT (datetime('now')),
     UNIQUE(user_id, game_id, symbol),
     FOREIGN KEY (user_id) REFERENCES users(id),
@@ -120,7 +120,7 @@ db.exec(`
     filled_at     TEXT,
     filled_price  REAL,
     filled_total    REAL,
-    reserved_amount REAL NOT NULL DEFAULT 0,
+    reserved_amount REAL NOT NULL DEFAULT 0 CHECK(reserved_amount >= 0),
     FOREIGN KEY (user_id) REFERENCES users(id),
     FOREIGN KEY (game_id) REFERENCES game_config(id)
   );

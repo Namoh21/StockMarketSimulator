@@ -1,6 +1,7 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import db from './db.js';
@@ -8,7 +9,40 @@ import db from './db.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 8081;
-const JWT_SECRET = process.env.JWT_SECRET || 'stockarena-change-this-secret-in-production';
+
+// Require a real secret; fall back to a random one (invalidates sessions on restart)
+const JWT_SECRET = (() => {
+  const s = process.env.JWT_SECRET;
+  if (!s || s === 'stockarena-change-this-secret-in-production') {
+    console.warn('\n  ⚠  JWT_SECRET not set in .env — using a random secret. All sessions reset on restart.\n     Add  JWT_SECRET=<long-random-string>  to your .env file.\n');
+    return crypto.randomBytes(48).toString('hex');
+  }
+  return s;
+})();
+
+// ── Security headers ──────────────────────────────────────────────────────────
+app.use((req, res, next) => {
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Content-Security-Policy',
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'");
+  next();
+});
+
+// ── Simple in-memory rate limiter (auth routes) ───────────────────────────────
+const _rateBuckets = new Map();
+function rateLimited(key, maxHits = 10, windowMs = 15 * 60 * 1000) {
+  const now = Date.now();
+  let b = _rateBuckets.get(key);
+  if (!b || now > b.resetAt) b = { hits: 0, resetAt: now + windowMs };
+  b.hits++;
+  _rateBuckets.set(key, b);
+  return b.hits > maxHits;
+}
+// Clean stale buckets every 30 minutes
+setInterval(() => { const now = Date.now(); for (const [k, b] of _rateBuckets) if (now > b.resetAt) _rateBuckets.delete(k); }, 30 * 60 * 1000);
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -97,9 +131,12 @@ const CACHE_TTL  = 5 * 60 * 1000;
 
 async function getQuote(symbol) {
   const sym = symbol.toUpperCase();
+  if (!validSymbol(sym)) throw new Error(`Invalid symbol: ${sym}`);
   const cached = priceCache.get(sym);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) return cached;
   const q = await yfQuote(sym);
+  if (!q.regularMarketPrice || q.regularMarketPrice <= 0)
+    throw new Error(`No valid price returned for ${sym}`);
   const data = {
     symbol: q.symbol || sym,
     name: q.longName || q.shortName || sym,
@@ -194,10 +231,18 @@ function requireAuth(req, res, next) {
 }
 function requireAdmin(req, res, next) {
   requireAuth(req, res, () => {
-    if (!req.user.is_admin) return res.status(403).json({ error: 'Admin only' });
+    // Re-check admin status from DB — JWT claim alone is not enough
+    const dbUser = db.prepare('SELECT is_admin FROM users WHERE id = ?').get(req.user.id);
+    if (!dbUser?.is_admin) return res.status(403).json({ error: 'Admin only' });
     next();
   });
 }
+
+// ── Input validation helpers ──────────────────────────────────────────────────
+const SYMBOL_RE = /^[A-Z0-9.=^-]{1,20}$/;
+function validSymbol(s)  { return typeof s === 'string' && SYMBOL_RE.test(s); }
+function validShares(n)  { return Number.isFinite(n) && n > 0 && n <= 1_000_000; }
+const ALLOWED_MARKETS    = new Set(['NYSE', 'NASDAQ', 'AMEX', 'ALL']);
 
 // ── Game middleware ───────────────────────────────────────────────────────────
 function gameStatus(game) {
@@ -242,6 +287,8 @@ function availableCash(userId, gameId, portfolio = null) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 app.post('/api/auth/register', async (req, res) => {
+  if (rateLimited(req.ip, 5, 15 * 60 * 1000))
+    return res.status(429).json({ error: 'Too many registration attempts — try again in 15 minutes' });
   const { username, email, password } = req.body || {};
   if (!username?.trim() || !email?.trim() || !password)
     return res.status(400).json({ error: 'Username, email, and password are required' });
@@ -263,6 +310,8 @@ app.post('/api/auth/register', async (req, res) => {
 });
 
 app.post('/api/auth/login', async (req, res) => {
+  if (rateLimited(req.ip))
+    return res.status(429).json({ error: 'Too many login attempts — try again in 15 minutes' });
   const { username, password } = req.body || {};
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
   const user = db.prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE').get(username.trim());
@@ -300,6 +349,9 @@ app.post('/api/games', requireAdmin, (req, res) => {
     return res.status(400).json({ error: 'end_date must be after start_date' });
   if (starting_cash < 100)
     return res.status(400).json({ error: 'starting_cash must be at least $100' });
+  const safeMarkets = (markets?.length ? markets : ['NYSE', 'NASDAQ']).filter(m => ALLOWED_MARKETS.has(m));
+  if (!safeMarkets.length)
+    return res.status(400).json({ error: 'At least one valid market is required (NYSE, NASDAQ, AMEX, ALL)' });
 
   const { lastInsertRowid } = db.prepare(
     `INSERT INTO game_config (title, start_date, end_date, starting_cash, markets, allow_fractional, allow_futures, futures_margin, is_active)
@@ -307,7 +359,7 @@ app.post('/api/games', requireAdmin, (req, res) => {
   ).run(
     title?.trim() || 'Stock Trading Game',
     start_date, end_date, starting_cash,
-    JSON.stringify(markets?.length ? markets : ['NYSE', 'NASDAQ']),
+    JSON.stringify(safeMarkets),
     allow_fractional ? 1 : 0,
     allow_futures    ? 1 : 0,
     parseFloat(futures_margin) || 0.20
@@ -541,6 +593,10 @@ app.post('/api/games/:gameId/orders', requireAuth, loadGame, async (req, res) =>
 
   if (!symbol || !type || !order_type || isNaN(shares) || shares <= 0)
     return res.status(400).json({ error: 'symbol, type, order_type, and shares are required' });
+  if (!validSymbol(symbol))
+    return res.status(400).json({ error: 'Invalid symbol format' });
+  if (!validShares(shares))
+    return res.status(400).json({ error: 'Shares must be a finite number between 0 and 1,000,000' });
   if (!['buy','sell'].includes(type))        return res.status(400).json({ error: 'type must be buy or sell' });
   if (!['market','limit'].includes(order_type)) return res.status(400).json({ error: 'order_type must be market or limit' });
   if (game.status === 'pending') return res.status(400).json({ error: 'Game has not started yet' });
@@ -717,6 +773,10 @@ app.post('/api/games/:gameId/futures/open', requireAuth, loadGame, async (req, r
   let { symbol, direction, contracts } = req.body || {};
   symbol = symbol?.toUpperCase(); contracts = parseFloat(contracts);
   if (!symbol || !direction || !contracts || contracts <= 0) return res.status(400).json({ error: 'symbol, direction, and contracts are required' });
+  if (!validSymbol(symbol))
+    return res.status(400).json({ error: 'Invalid symbol format' });
+  if (!validShares(contracts))
+    return res.status(400).json({ error: 'Contracts must be a finite number between 0 and 1,000,000' });
   if (!['long', 'short'].includes(direction)) return res.status(400).json({ error: 'direction must be "long" or "short"' });
 
   const contractInfo = FUTURES_CONTRACTS.find(f => f.symbol === symbol);
@@ -765,6 +825,10 @@ app.post('/api/games/:gameId/futures/close', requireAuth, loadGame, async (req, 
   let { symbol, contracts } = req.body || {};
   symbol = symbol?.toUpperCase(); contracts = parseFloat(contracts);
   if (!symbol || !contracts || contracts <= 0) return res.status(400).json({ error: 'symbol and contracts are required' });
+  if (!validSymbol(symbol))
+    return res.status(400).json({ error: 'Invalid symbol format' });
+  if (!validShares(contracts))
+    return res.status(400).json({ error: 'Contracts must be a finite number between 0 and 1,000,000' });
 
   const position = db.prepare('SELECT * FROM futures_positions WHERE user_id = ? AND game_id = ? AND symbol = ? AND contracts > 0').get(req.user.id, game.id, symbol);
   if (!position || position.contracts < contracts - 0.000001)
