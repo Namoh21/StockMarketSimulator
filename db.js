@@ -105,6 +105,16 @@ db.exec(`
     FOREIGN KEY (game_id) REFERENCES game_config(id)
   );
 
+  CREATE TABLE IF NOT EXISTS api_keys (
+    id         INTEGER PRIMARY KEY,
+    user_id    INTEGER NOT NULL,
+    label      TEXT    NOT NULL DEFAULT 'AI Agent',
+    key_value  TEXT    NOT NULL UNIQUE,
+    created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+    last_used  TEXT,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  );
+
   CREATE TABLE IF NOT EXISTS pending_orders (
     id            INTEGER PRIMARY KEY,
     user_id       INTEGER NOT NULL,

@@ -284,6 +284,7 @@
       <button class="nav-btn" data-view="leaderboard" onclick="App.navigate('leaderboard')" style="display:none" id="nav-leaderboard">Leaderboard</button>
       <button class="nav-btn" data-view="history"   onclick="App.navigate('history')"   style="display:none" id="nav-history">History</button>
       <button class="nav-btn" data-view="admin"     onclick="App.navigate('admin')"     style="display:none" id="nav-admin">⚙ Admin</button>
+      <button class="nav-btn" data-view="apikeys"   onclick="App.navigate('apikeys')"   style="display:none" id="nav-apikeys">🤖 API</button>
     </div>
     <div class="nav-user">
       <span class="nav-username" id="nav-username"></span>
@@ -655,6 +656,135 @@
       <div class="card"><div class="table-wrap"><table><thead><tr><th>Username</th><th>Role</th><th>Status</th><th>Joined</th><th></th></tr></thead><tbody id="admin-players-body"></tbody></table></div></div>
     </div>
 
+    <!-- ── API KEYS ──────────────────────────────────────────────────────────── -->
+    <div id="view-apikeys" class="view">
+      <div class="section-title">🤖 AI Agent API Keys</div>
+
+      <div class="info-box" style="margin-bottom:16px">
+        Generate an API key to let an AI agent (like Claude) place trades on your behalf.
+        The agent authenticates with <code style="background:var(--bg3);padding:1px 5px;border-radius:3px">Authorization: Bearer ska_…</code> and can use all trade endpoints.
+        Keys are tied to your account — the agent trades as you.
+      </div>
+
+      <!-- Generate form -->
+      <div class="card" style="max-width:500px;margin-bottom:20px">
+        <div style="font-size:13px;font-weight:700;margin-bottom:10px">Generate New Key</div>
+        <div class="form-group">
+          <label for="apikey-label">Key Label</label>
+          <input id="apikey-label" type="text" placeholder="e.g. Claude Agent, My Bot" maxlength="64">
+        </div>
+        <div id="apikey-error" class="error-msg" style="margin-bottom:8px"></div>
+        <button class="btn btn-primary" onclick="App.generateApiKey()">Generate API Key</button>
+      </div>
+
+      <!-- New key reveal (shown once) -->
+      <div id="apikey-reveal" class="card" style="display:none;max-width:500px;margin-bottom:20px;border-color:var(--green)">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+          <span style="font-size:18px">✅</span>
+          <span style="font-weight:700;color:var(--green)">Key generated — copy it now!</span>
+        </div>
+        <div class="warn-box" style="margin-bottom:10px">This key will <strong>not</strong> be shown again. Store it somewhere safe before leaving this page.</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <code id="apikey-new-value" style="flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:9px 12px;font-size:12px;word-break:break-all;user-select:all"></code>
+          <button class="btn btn-ghost btn-sm" onclick="App.copyApiKey()" id="apikey-copy-btn">Copy</button>
+        </div>
+      </div>
+
+      <!-- Existing keys -->
+      <div class="card" style="max-width:680px;margin-bottom:28px">
+        <div style="font-size:13px;font-weight:700;margin-bottom:10px">Your Keys <span id="apikey-count" class="tag">0</span></div>
+        <div id="apikey-empty" class="empty" style="padding:20px"><div class="empty-icon">🔑</div><div class="empty-text">No API keys yet.</div></div>
+        <div class="table-wrap" id="apikey-table-wrap" style="display:none">
+          <table><thead><tr><th>Label</th><th>Key Preview</th><th>Created</th><th>Last Used</th><th></th></tr></thead>
+          <tbody id="apikey-body"></tbody></table>
+        </div>
+      </div>
+
+      <!-- API Reference -->
+      <div class="card" style="max-width:680px">
+        <div style="font-size:14px;font-weight:700;margin-bottom:14px">📖 Agent API Reference</div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:14px">
+          All requests require: <code style="background:var(--bg3);padding:1px 5px;border-radius:3px">Authorization: Bearer ska_your_key_here</code>
+        </div>
+
+        <div id="apiref-game-id" class="info-box" style="margin-bottom:14px;font-size:12px">
+          💡 <strong>Your active game ID:</strong> <span id="apiref-gameid-val" class="muted">Join a game first to see it here.</span>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:10px">
+
+          <details style="background:var(--bg3);border-radius:6px;padding:10px 12px">
+            <summary style="cursor:pointer;font-weight:600;font-size:12px;list-style:none">GET /api/games — List all games</summary>
+            <pre style="margin-top:8px;font-size:11px;color:var(--muted);white-space:pre-wrap">Returns all active games with status, starting cash, and whether you've joined.</pre>
+          </details>
+
+          <details style="background:var(--bg3);border-radius:6px;padding:10px 12px">
+            <summary style="cursor:pointer;font-weight:600;font-size:12px;list-style:none">POST /api/games/:gameId/join — Join a game</summary>
+            <pre style="margin-top:8px;font-size:11px;color:var(--muted);white-space:pre-wrap">No body required. Creates your portfolio in the game.</pre>
+          </details>
+
+          <details style="background:var(--bg3);border-radius:6px;padding:10px 12px">
+            <summary style="cursor:pointer;font-weight:600;font-size:12px;list-style:none">GET /api/games/:gameId/portfolio — Get portfolio</summary>
+            <pre style="margin-top:8px;font-size:11px;color:var(--muted);white-space:pre-wrap">Returns cash_balance, available_cash, stock holdings with current prices, futures positions, and total_value.</pre>
+          </details>
+
+          <details style="background:var(--bg3);border-radius:6px;padding:10px 12px">
+            <summary style="cursor:pointer;font-weight:600;font-size:12px;list-style:none">GET /api/stocks/search?q=QUERY — Search stocks</summary>
+            <pre style="margin-top:8px;font-size:11px;color:var(--muted);white-space:pre-wrap">Returns up to 8 matching stocks with symbol, name, and exchange.</pre>
+          </details>
+
+          <details style="background:var(--bg3);border-radius:6px;padding:10px 12px">
+            <summary style="cursor:pointer;font-weight:600;font-size:12px;list-style:none">GET /api/stocks/quote/:symbol — Get live quote</summary>
+            <pre style="margin-top:8px;font-size:11px;color:var(--muted);white-space:pre-wrap">Returns price, change, changePercent, open, high, low, volume, marketState.</pre>
+          </details>
+
+          <details style="background:var(--bg3);border-radius:6px;padding:10px 12px">
+            <summary style="cursor:pointer;font-weight:600;font-size:12px;list-style:none">POST /api/games/:gameId/orders — Place an order ⭐</summary>
+            <pre style="margin-top:8px;font-size:11px;color:var(--muted);white-space:pre-wrap">Body (JSON):
+{
+  "symbol":     "NVDA",          // stock ticker
+  "type":       "buy",           // "buy" or "sell"
+  "order_type": "market",        // "market" or "limit"
+  "shares":     10,              // number of shares
+  "limit_price": 850.00          // required only for limit orders
+}
+
+Returns: { filled, filled_price, cash_balance, message }
+Market orders fill immediately if market is open, else queue for open.</pre>
+          </details>
+
+          <details style="background:var(--bg3);border-radius:6px;padding:10px 12px">
+            <summary style="cursor:pointer;font-weight:600;font-size:12px;list-style:none">GET /api/games/:gameId/orders — List pending &amp; recent orders</summary>
+            <pre style="margin-top:8px;font-size:11px;color:var(--muted);white-space:pre-wrap">Returns last 100 orders with status: pending, filled, cancelled, rejected.</pre>
+          </details>
+
+          <details style="background:var(--bg3);border-radius:6px;padding:10px 12px">
+            <summary style="cursor:pointer;font-weight:600;font-size:12px;list-style:none">DELETE /api/games/:gameId/orders/:orderId — Cancel a pending order</summary>
+            <pre style="margin-top:8px;font-size:11px;color:var(--muted);white-space:pre-wrap">Cancels a pending order and releases its reserved funds.</pre>
+          </details>
+
+          <details style="background:var(--bg3);border-radius:6px;padding:10px 12px">
+            <summary style="cursor:pointer;font-weight:600;font-size:12px;list-style:none">GET /api/games/:gameId/leaderboard — Leaderboard</summary>
+            <pre style="margin-top:8px;font-size:11px;color:var(--muted);white-space:pre-wrap">Returns all players ranked by total portfolio value with gain/loss stats.</pre>
+          </details>
+
+          <details style="background:var(--bg3);border-radius:6px;padding:10px 12px">
+            <summary style="cursor:pointer;font-weight:600;font-size:12px;list-style:none">GET /api/market/status — Market open/closed</summary>
+            <pre style="margin-top:8px;font-size:11px;color:var(--muted);white-space:pre-wrap">Returns { open: true/false, detail: "Closes 4:00 PM ET today" }</pre>
+          </details>
+
+        </div>
+
+        <div style="margin-top:14px;padding:10px 12px;background:var(--bg3);border-radius:6px;font-size:11px;color:var(--muted);line-height:1.7">
+          <strong style="color:var(--text)">Claude agent example prompt:</strong><br>
+          "You are a stock trading agent. Your API key is <em>ska_…</em> and the game ID is <em>3</em>.
+          The base URL is <em>http://&lt;host&gt;:8081</em>.
+          Analyze the market and make trades to maximize portfolio value.
+          Check your portfolio first, then research stocks before buying."
+        </div>
+      </div>
+    </div>
+
   </main>
 </div>
 
@@ -805,6 +935,7 @@ const App = (() => {
     if (view==='leaderboard') { loadLeaderboard(); }
     if (view==='history')     { loadHistory(); }
     if (view==='admin')       { loadAdmin(); }
+    if (view==='apikeys')     { loadApiKeys(); }
   }
 
   function enterGame(game) {
@@ -830,6 +961,7 @@ const App = (() => {
     document.getElementById('nav-game-name').textContent      = '';
     ['portfolio','trade','futures','leaderboard','history'].forEach(v =>
       document.getElementById(`nav-${v}`).style.display = 'none');
+    document.getElementById('nav-apikeys').style.display = 'none';
     document.getElementById('game-banner').className = '';
     navigate('games');
   }
@@ -863,6 +995,7 @@ const App = (() => {
     document.getElementById('app-shell').style.display='none';
     document.getElementById('pending-shell').style.display='none';
     document.getElementById('auth-shell').style.display='flex';
+    document.getElementById('nav-apikeys').style.display='none';
     switchAuthTab('login');
   }
 
@@ -878,6 +1011,7 @@ const App = (() => {
     document.getElementById('app-shell').style.display='flex';
     document.getElementById('nav-username').textContent=user.username;
     if (user.is_admin) { document.getElementById('nav-admin').style.display=''; document.getElementById('nav-admin-badge').style.display=''; }
+    document.getElementById('nav-apikeys').style.display='';
     navigate('games');
   }
 
@@ -1839,6 +1973,63 @@ const App = (() => {
     }
   }
 
+  // ── API Keys ───────────────────────────────────────────────────────────────
+  async function loadApiKeys() {
+    // Show current game ID hint in the reference section
+    const gameHint = document.getElementById('apiref-gameid-val');
+    if (gameHint) gameHint.textContent = currentGameId ? `${currentGameId}` : 'Join a game first to see it here.';
+
+    document.getElementById('apikey-reveal').style.display = 'none';
+    document.getElementById('apikey-error').textContent = '';
+    try {
+      const keys = await api('GET', '/api/user/api-keys');
+      document.getElementById('apikey-count').textContent = keys.length;
+      const empty = document.getElementById('apikey-empty');
+      const wrap  = document.getElementById('apikey-table-wrap');
+      if (!keys.length) { empty.style.display=''; wrap.style.display='none'; return; }
+      empty.style.display='none'; wrap.style.display='';
+      document.getElementById('apikey-body').innerHTML = keys.map(k => `<tr>
+        <td><strong>${esc(k.label)}</strong></td>
+        <td><code style="font-size:11px;color:var(--muted)">${esc(k.key_preview)}</code></td>
+        <td class="muted">${fmtDate(k.created_at)}</td>
+        <td class="muted">${k.last_used ? fmtDate(k.last_used) : '—'}</td>
+        <td><button class="btn btn-red btn-sm" data-kid="${k.id}" data-label="${esc(k.label)}" onclick="App.revokeApiKey(parseInt(this.dataset.kid), this.dataset.label)">Revoke</button></td>
+      </tr>`).join('');
+    } catch(err) { console.error(err); }
+  }
+
+  async function generateApiKey() {
+    const label = document.getElementById('apikey-label').value.trim() || 'AI Agent';
+    const errEl = document.getElementById('apikey-error');
+    errEl.textContent = '';
+    try {
+      const r = await api('POST', '/api/user/api-keys', { label });
+      document.getElementById('apikey-new-value').textContent = r.key;
+      document.getElementById('apikey-reveal').style.display = '';
+      document.getElementById('apikey-label').value = '';
+      document.getElementById('apikey-copy-btn').textContent = 'Copy';
+      await loadApiKeys();
+    } catch(err) { errEl.textContent = err.message; }
+  }
+
+  function copyApiKey() {
+    const val = document.getElementById('apikey-new-value').textContent;
+    navigator.clipboard?.writeText(val).then(() => {
+      const btn = document.getElementById('apikey-copy-btn');
+      btn.textContent = '✓ Copied!'; btn.style.color='var(--green)';
+      setTimeout(() => { btn.textContent='Copy'; btn.style.color=''; }, 2000);
+    });
+  }
+
+  async function revokeApiKey(keyId, label) {
+    if (!confirm(`Revoke API key "${label}"? Any agent using it will lose access immediately.`)) return;
+    try {
+      const r = await api('DELETE', `/api/user/api-keys/${keyId}`);
+      toast(r.message, 'info');
+      await loadApiKeys();
+    } catch(err) { toast(err.message, 'error'); }
+  }
+
   // ── Keyboard ───────────────────────────────────────────────────────────────
   document.addEventListener('keydown', e => {
     if(e.key==='Escape'){ closeSellModal(); closeCloseFuturesModal(); closeDeleteModal(); }
@@ -1870,6 +2061,7 @@ const App = (() => {
     openCloseFuturesModal, closeCloseFuturesModal, updateCfmTotal, setCfmMax, executeClosePosition,
     editGame, resetAdminForm, saveGameConfig,
     approveUser, revokeUser, deletePendingUser,
+    generateApiKey, copyApiKey, revokeApiKey,
     openDeleteModal, closeDeleteModal, confirmDeleteGame,
   };
 })();

@@ -224,8 +224,23 @@ function isExchangeAllowed(exchange, markets) {
 function requireAuth(req, res, next) {
   const header = req.headers.authorization;
   if (!header) return res.status(401).json({ error: 'Unauthorized' });
+  const token = header.startsWith('Bearer ') ? header.slice(7) : header;
+
+  if (token.startsWith('ska_')) {
+    // API key auth — used by AI agents
+    const keyRecord = db.prepare('SELECT * FROM api_keys WHERE key_value = ?').get(token);
+    if (!keyRecord) return res.status(401).json({ error: 'Invalid API key' });
+    const dbUser = db.prepare('SELECT id, username, is_admin, is_approved FROM users WHERE id = ?').get(keyRecord.user_id);
+    if (!dbUser) return res.status(401).json({ error: 'User not found' });
+    if (!dbUser.is_approved) return res.status(403).json({ error: 'Account not approved' });
+    db.prepare("UPDATE api_keys SET last_used = datetime('now') WHERE id = ?").run(keyRecord.id);
+    req.user = dbUser;
+    req.apiKeyLabel = keyRecord.label;
+    return next();
+  }
+
   try {
-    req.user = jwt.verify(header.replace('Bearer ', ''), JWT_SECRET);
+    req.user = jwt.verify(token, JWT_SECRET);
     next();
   } catch { res.status(401).json({ error: 'Invalid or expired token' }); }
 }
@@ -326,6 +341,35 @@ app.get('/api/auth/me', requireAuth, (req, res) => {
   const user = db.prepare('SELECT id, username, email, is_admin, is_approved FROM users WHERE id = ?').get(req.user.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
   res.json(user);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// API KEYS — for AI agent access
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// List keys for the authenticated user (key values are masked after creation)
+app.get('/api/user/api-keys', requireAuth, (req, res) => {
+  const keys = db.prepare('SELECT id, label, key_value, created_at, last_used FROM api_keys WHERE user_id = ? ORDER BY created_at DESC').all(req.user.id);
+  // Return only the first 8 chars + '...' so users can identify keys without exposing them
+  res.json(keys.map(k => ({ ...k, key_preview: k.key_value.slice(0, 12) + '…', key_value: undefined })));
+});
+
+// Generate a new API key — returns the full key ONCE; not stored in plaintext after this response
+app.post('/api/user/api-keys', requireAuth, (req, res) => {
+  const label = (req.body?.label || 'AI Agent').slice(0, 64).trim();
+  const existing = db.prepare('SELECT COUNT(*) as c FROM api_keys WHERE user_id = ?').get(req.user.id).c;
+  if (existing >= 5) return res.status(400).json({ error: 'Maximum of 5 API keys per user. Revoke one before creating another.' });
+  const key = 'ska_' + crypto.randomBytes(32).toString('hex');
+  const { lastInsertRowid } = db.prepare('INSERT INTO api_keys (user_id, label, key_value) VALUES (?, ?, ?)').run(req.user.id, label, key);
+  res.json({ id: lastInsertRowid, label, key, message: 'Save this key — it will not be shown again.' });
+});
+
+// Revoke (delete) a key
+app.delete('/api/user/api-keys/:keyId', requireAuth, (req, res) => {
+  const key = db.prepare('SELECT * FROM api_keys WHERE id = ? AND user_id = ?').get(req.params.keyId, req.user.id);
+  if (!key) return res.status(404).json({ error: 'API key not found' });
+  db.prepare('DELETE FROM api_keys WHERE id = ?').run(key.id);
+  res.json({ message: `API key "${key.label}" has been revoked.` });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -911,6 +955,7 @@ app.delete('/api/admin/users/:userId', requireAdmin, (req, res) => {
   if (target.is_admin) return res.status(400).json({ error: 'Cannot delete an admin account.' });
   if (target.is_approved) return res.status(400).json({ error: 'Cannot delete an approved user. Revoke approval first, or delete via game management.' });
   if (target.id === req.user.id) return res.status(400).json({ error: 'Cannot delete your own account.' });
+  db.prepare('DELETE FROM api_keys WHERE user_id = ?').run(target.id);
   db.prepare('DELETE FROM users WHERE id = ?').run(target.id);
   res.json({ message: `${target.username} has been deleted.` });
 });
