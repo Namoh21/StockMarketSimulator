@@ -398,45 +398,142 @@
 
     <!-- ── FUTURES ─────────────────────────────────────────────────────────── -->
     <div id="view-futures" class="view">
-      <div class="section-title">Futures Trading
-        <span class="tag" id="futures-margin-rate"></span>
-      </div>
-      <div class="info-box">
-        <strong>How futures work in StockArena:</strong> Go <span class="green">LONG</span> to profit when price rises, or <span class="red">SHORT</span> to profit when price falls.
-        Margin is reserved from your cash. P&L = contracts × (exit&nbsp;−&nbsp;entry) for long, (entry&nbsp;−&nbsp;exit) for short.
-        Close your position to realize gains or losses and release margin.
-      </div>
+      <div class="section-title">Futures Trading <span class="tag" id="futures-margin-rate"></span></div>
+
+      <!-- Collapsible guide -->
+      <details class="card" style="margin-bottom:16px" id="futures-learn">
+        <summary style="cursor:pointer;font-weight:700;font-size:14px;list-style:none;display:flex;align-items:center;gap:8px">
+          <span>📚</span> How Futures Work — click to learn
+        </summary>
+        <div style="margin-top:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px">
+          <div style="background:var(--bg3);border-radius:8px;padding:14px">
+            <div style="font-weight:700;margin-bottom:6px">What is a futures contract?</div>
+            <div style="font-size:13px;color:var(--muted);line-height:1.7">
+              A futures contract is an agreement to profit (or lose) based on the price movement of an asset — like a stock index, oil, or gold.
+              You don't own the asset. You're simply betting on whether the price will go <strong style="color:var(--green)">up</strong> or <strong style="color:var(--red)">down</strong>.
+            </div>
+          </div>
+          <div style="background:var(--green-dim);border:1px solid var(--green);border-radius:8px;padding:14px">
+            <div style="font-weight:700;margin-bottom:6px;color:var(--green)">📈 LONG — betting price rises</div>
+            <div style="font-size:13px;line-height:1.7">
+              You open a <strong>Long</strong> position when you think a price will go <strong>up</strong>.<br>
+              <strong>Example:</strong> You go Long 5 contracts of ES=F (S&P 500) at <strong>$5,000</strong>.<br>
+              If it rises to <strong>$5,050</strong> → Profit = 5 × ($5,050 − $5,000) = <span style="color:var(--green)"><strong>+$250</strong></span><br>
+              If it falls to <strong>$4,980</strong> → Loss = 5 × ($4,980 − $5,000) = <span style="color:var(--red)"><strong>−$100</strong></span>
+            </div>
+          </div>
+          <div style="background:var(--red-dim);border:1px solid var(--red);border-radius:8px;padding:14px">
+            <div style="font-weight:700;margin-bottom:6px;color:var(--red)">📉 SHORT — betting price falls</div>
+            <div style="font-size:13px;line-height:1.7">
+              You open a <strong>Short</strong> position when you think a price will go <strong>down</strong>.<br>
+              <strong>Example:</strong> You go Short 3 contracts of CL=F (Crude Oil) at <strong>$80</strong>.<br>
+              If it falls to <strong>$75</strong> → Profit = 3 × ($80 − $75) = <span style="color:var(--green)"><strong>+$15</strong></span><br>
+              If it rises to <strong>$85</strong> → Loss = 3 × ($80 − $85) = <span style="color:var(--red)"><strong>−$15</strong></span>
+            </div>
+          </div>
+          <div style="background:var(--bg3);border-radius:8px;padding:14px">
+            <div style="font-weight:700;margin-bottom:6px">💰 Margin — your deposit</div>
+            <div style="font-size:13px;color:var(--muted);line-height:1.7">
+              You only put up a <strong>margin deposit</strong> (e.g. 20% of position value) — not the full amount.
+              This cash is <strong>locked</strong> while the position is open and returned when you close it, plus or minus your P&L.<br>
+              <strong>Example:</strong> 10 contracts at $5,000, 20% margin = <strong>$10,000</strong> reserved.
+              You still profit/lose on all 10 contracts.
+            </div>
+          </div>
+          <div style="background:var(--bg3);border-radius:8px;padding:14px">
+            <div style="font-weight:700;margin-bottom:6px">🔢 P&L Formula</div>
+            <div style="font-size:13px;color:var(--muted);line-height:1.7">
+              <strong>Long:</strong> P&L = contracts × (exit price − entry price)<br>
+              <strong>Short:</strong> P&L = contracts × (entry price − exit price)<br><br>
+              When you <strong>close</strong> a position, your margin is returned plus your realized profit (or minus your loss).
+              Unrealized P&L is included in your total portfolio value while the position is open.
+            </div>
+          </div>
+          <div style="background:var(--bg3);border-radius:8px;padding:14px">
+            <div style="font-weight:700;margin-bottom:6px">🎮 How to trade here</div>
+            <div style="font-size:13px;color:var(--muted);line-height:1.7">
+              1. Click a contract below to select it<br>
+              2. Choose <strong>LONG</strong> or <strong>SHORT</strong><br>
+              3. Enter how many contracts you want<br>
+              4. Use the <strong>P&L Simulator</strong> to preview outcomes<br>
+              5. Click <strong>Open Position</strong><br>
+              6. Monitor in your <strong>Portfolio</strong> tab<br>
+              7. Click <strong>Close</strong> in Portfolio to take profit/loss
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <!-- Category filter tabs -->
       <div class="futures-tabs" id="futures-cat-tabs"></div>
+
+      <!-- Contract grid -->
       <div class="futures-grid" id="futures-contracts-grid"></div>
+
+      <!-- Trading panel — appears when a contract is selected -->
       <div id="futures-trade-panel" style="display:none">
         <hr class="sep">
-        <div style="display:grid;grid-template-columns:1fr 300px;gap:18px">
-          <div class="card">
-            <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px">
-              <div><div style="font-size:18px;font-weight:800" id="ft-symbol"></div><div class="muted" style="font-size:12px" id="ft-name"></div><div style="font-size:11px;margin-top:2px" id="ft-desc"></div></div>
-              <div style="text-align:right"><div style="font-size:26px;font-weight:800" id="ft-price"></div><div id="ft-change" style="font-size:13px"></div></div>
+        <div style="display:grid;grid-template-columns:1fr 320px;gap:18px">
+          @media(max-width:720px){grid-template-columns:1fr}
+
+          <!-- Left: contract info + P&L simulator -->
+          <div>
+            <div class="card" style="margin-bottom:14px">
+              <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px">
+                <div>
+                  <div style="font-size:20px;font-weight:800" id="ft-symbol"></div>
+                  <div class="muted" style="font-size:13px;margin-top:2px" id="ft-name"></div>
+                  <div class="muted" style="font-size:11px;margin-top:3px" id="ft-desc"></div>
+                </div>
+                <div style="text-align:right">
+                  <div style="font-size:28px;font-weight:800" id="ft-price"></div>
+                  <div id="ft-change" style="font-size:13px"></div>
+                </div>
+              </div>
+              <div id="ft-open-pos" class="warn-box" style="display:none"></div>
             </div>
-            <div id="ft-open-pos" class="warn-box" style="display:none"></div>
+
+            <!-- P&L Simulator -->
+            <div class="card">
+              <div style="font-size:13px;font-weight:700;margin-bottom:4px">📊 P&L Simulator</div>
+              <div class="muted" style="font-size:12px;margin-bottom:12px">Enter a target price to preview your profit or loss <em>before</em> opening a position.</div>
+              <div class="form-group" style="margin-bottom:10px">
+                <label>If price moves to ($)</label>
+                <input id="ft-sim-price" type="number" step="0.01" placeholder="Enter a target price…" oninput="App.updateFuturesSim()">
+              </div>
+              <div id="ft-sim-result">
+                <div class="muted" style="font-size:12px;text-align:center;padding:10px">Enter a target price and contract count to see your estimated P&L.</div>
+              </div>
+            </div>
           </div>
+
+          <!-- Right: trade form -->
           <div class="card">
+            <div style="font-size:12px;color:var(--muted);margin-bottom:10px">
+              <span id="ft-dir-hint-long" style="display:block">📈 <strong style="color:var(--green)">LONG</strong> — profit when price <strong>rises</strong> above your entry</span>
+              <span id="ft-dir-hint-short" style="display:none">📉 <strong style="color:var(--red)">SHORT</strong> — profit when price <strong>falls</strong> below your entry</span>
+            </div>
             <div class="futures-direction-tabs">
               <button class="dir-tab long active" onclick="App.setFuturesDir('long')">📈 LONG</button>
               <button class="dir-tab short" onclick="App.setFuturesDir('short')">📉 SHORT</button>
             </div>
             <div class="form-group">
-              <label>Contracts</label>
+              <label>Number of Contracts</label>
               <div class="shares-row">
                 <input id="ft-contracts" type="number" min="0.01" step="any" placeholder="1" oninput="App.updateFuturesTotal()">
                 <button class="btn btn-ghost btn-sm" onclick="App.setMaxFuturesContracts()">Max</button>
               </div>
+              <div class="shares-hint">Each contract = 1 unit of price movement per $1</div>
             </div>
-            <div style="background:var(--bg3);border-radius:6px;padding:10px;margin-bottom:12px;font-size:12px">
-              <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span class="muted">Margin Required</span><span id="ft-margin-needed" style="font-weight:700">$0.00</span></div>
-              <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span class="muted">Cash Available</span><span id="ft-cash" style="font-weight:600">$0.00</span></div>
+            <div style="background:var(--bg3);border-radius:6px;padding:11px;margin-bottom:12px;font-size:12px">
+              <div style="display:flex;justify-content:space-between;margin-bottom:5px"><span class="muted">Entry Price</span><span id="ft-entry-display" style="font-weight:600">—</span></div>
+              <div style="display:flex;justify-content:space-between;margin-bottom:5px"><span class="muted">Margin Required</span><span id="ft-margin-needed" style="font-weight:700;color:var(--gold)">$0.00</span></div>
+              <div style="display:flex;justify-content:space-between;margin-bottom:5px"><span class="muted">Cash Available</span><span id="ft-cash" style="font-weight:600">$0.00</span></div>
               <div style="display:flex;justify-content:space-between;border-top:1px solid var(--border);padding-top:6px;margin-top:4px"><span class="muted">Cash After Open</span><span id="ft-cash-after">—</span></div>
             </div>
             <div id="futures-error" class="error-msg" style="margin-bottom:8px"></div>
-            <button class="btn btn-full btn-purple" id="ft-submit-btn" onclick="App.openFuturesPosition()"><span id="ft-submit-label">Open Long Position</span></button>
+            <button class="btn btn-full btn-green" id="ft-submit-btn" onclick="App.openFuturesPosition()"><span id="ft-submit-label">Open Long Position</span></button>
+            <div class="shares-hint" style="margin-top:8px;text-align:center">Margin is returned when you close the position, ± your P&L</div>
           </div>
         </div>
       </div>
@@ -1193,7 +1290,7 @@ const App = (() => {
   async function loadFutures() {
     if(!currentGameId||!currentGame?.allow_futures) return;
     document.getElementById('futures-margin-rate').textContent=`${Math.round((currentGame.futures_margin||0.2)*100)}% margin`;
-    document.getElementById('ft-cash').textContent=fmt$(portfolio?.cash_balance??0);
+    document.getElementById('ft-cash').textContent=fmt$(portfolio?.available_cash??portfolio?.cash_balance??0);
     try {
       allContracts = await api('GET','/api/futures/contracts');
       renderFuturesCats(); renderFuturesGrid('All');
@@ -1241,30 +1338,86 @@ const App = (() => {
     document.getElementById('ft-contracts').value='';
     updateFuturesTotal();
     setFuturesDir(futuresDir);
-    document.getElementById('ft-cash').textContent=fmt$(portfolio?.cash_balance??0);
+    document.getElementById('ft-cash').textContent=fmt$(portfolio?.available_cash??portfolio?.cash_balance??0);
   }
 
   function setFuturesDir(dir) {
-    futuresDir=dir;
-    document.querySelectorAll('.dir-tab').forEach(b=>b.classList.toggle('active',b.classList.contains(dir)));
-    const lbl=document.getElementById('ft-submit-label');
-    lbl.textContent=dir==='long'?'Open Long (Buy)':'Open Short (Sell)';
-    document.getElementById('ft-submit-btn').className=`btn btn-full ${dir==='long'?'btn-green':'btn-red'}`;
+    futuresDir = dir;
+    document.querySelectorAll('.dir-tab').forEach(b => b.classList.toggle('active', b.classList.contains(dir)));
+    const lbl = document.getElementById('ft-submit-label');
+    if (lbl) lbl.textContent = dir === 'long' ? 'Open Long Position' : 'Open Short Position';
+    const btn = document.getElementById('ft-submit-btn');
+    if (btn) btn.className = `btn btn-full ${dir === 'long' ? 'btn-green' : 'btn-red'}`;
+    const hintL = document.getElementById('ft-dir-hint-long');
+    const hintS = document.getElementById('ft-dir-hint-short');
+    if (hintL) hintL.style.display = dir === 'long' ? 'block' : 'none';
+    if (hintS) hintS.style.display = dir === 'short' ? 'block' : 'none';
     updateFuturesTotal();
+    updateFuturesSim();
+  }
+
+  function updateFuturesSim() {
+    const contracts  = parseFloat(document.getElementById('ft-contracts')?.value) || 1;
+    const targetStr  = document.getElementById('ft-sim-price')?.value;
+    const target     = parseFloat(targetStr);
+    const entry      = selectedFutures?.price;
+    const resultEl   = document.getElementById('ft-sim-result');
+    if (!resultEl) return;
+    if (!entry) { resultEl.innerHTML = ''; return; }
+
+    // Always show the formula as a reference even without a target price
+    const formulaNote = futuresDir === 'long'
+      ? `P&L = contracts × (exit − $${entry.toFixed(2)})`
+      : `P&L = contracts × ($${entry.toFixed(2)} − exit)`;
+
+    if (!target || isNaN(target)) {
+      resultEl.innerHTML = `<div class="muted" style="font-size:12px;padding:8px 0">${formulaNote}</div>`;
+      return;
+    }
+
+    const pnl      = futuresDir === 'long' ? (target - entry) * contracts : (entry - target) * contracts;
+    const isProfit = pnl >= 0;
+    const pnlColor = isProfit ? 'var(--green)' : 'var(--red)';
+    const pnlBg    = isProfit ? 'var(--green-dim)' : 'var(--red-dim)';
+    const breakevenDiff = futuresDir === 'long' ? target - entry : entry - target;
+
+    resultEl.innerHTML = `
+      <div style="background:${pnlBg};border-radius:6px;padding:12px;margin-top:4px">
+        <div style="font-size:15px;font-weight:700;color:${pnlColor};margin-bottom:4px">
+          ${isProfit ? '✅ Profit' : '❌ Loss'}: ${pnl >= 0 ? '+' : ''}${fmt$(pnl)}
+        </div>
+        <div style="font-size:12px;color:var(--muted);line-height:1.7">
+          ${contracts} contract${contracts !== 1 ? 's' : ''} × ${futuresDir === 'long'
+            ? `(${fmt$(target)} − ${fmt$(entry)})`
+            : `(${fmt$(entry)} − ${fmt$(target)})`} = ${pnl >= 0 ? '+' : ''}${fmt$(pnl)}<br>
+          ${breakevenDiff >= 0
+            ? `Price moved <strong>${fmt$(Math.abs(breakevenDiff))}</strong> in your favour`
+            : `Price moved <strong>${fmt$(Math.abs(breakevenDiff))}</strong> against you`}
+        </div>
+      </div>`;
   }
 
   function updateFuturesTotal() {
-    const c=parseFloat(document.getElementById('ft-contracts').value)||0,p=selectedFutures?.price||0,m=currentGame?.futures_margin||0.2;
-    const margin=c*p*m,cash=portfolio?.cash_balance??0;
-    document.getElementById('ft-margin-needed').textContent=fmt$(margin);
-    document.getElementById('ft-cash-after').textContent=fmt$(cash-margin);
-    document.getElementById('ft-cash-after').className=cash-margin<0?'red':'';
+    const c      = parseFloat(document.getElementById('ft-contracts')?.value) || 0;
+    const p      = selectedFutures?.price || 0;
+    const m      = currentGame?.futures_margin || 0.2;
+    const margin = c * p * m;
+    const avail  = portfolio?.available_cash ?? portfolio?.cash_balance ?? 0;
+    const afterOpen = avail - margin;
+    const entryEl = document.getElementById('ft-entry-display');
+    if (entryEl) entryEl.textContent = p ? fmt$(p) : '—';
+    const mn = document.getElementById('ft-margin-needed');
+    if (mn) mn.textContent = fmt$(margin);
+    const ca = document.getElementById('ft-cash-after');
+    if (ca) { ca.textContent = fmt$(afterOpen); ca.className = afterOpen < 0 ? 'red' : ''; }
+    updateFuturesSim();
   }
 
   function setMaxFuturesContracts() {
-    if(!selectedFutures?.price) return;
-    const cash=portfolio?.cash_balance||0,m=currentGame?.futures_margin||0.2;
-    document.getElementById('ft-contracts').value=Math.floor(cash/(selectedFutures.price*m)*100)/100;
+    if (!selectedFutures?.price) return;
+    const avail = portfolio?.available_cash ?? portfolio?.cash_balance ?? 0;
+    const m     = currentGame?.futures_margin || 0.2;
+    document.getElementById('ft-contracts').value = Math.floor(avail / (selectedFutures.price * m) * 100) / 100;
     updateFuturesTotal();
   }
 
@@ -1550,7 +1703,7 @@ const App = (() => {
     joinAndEnter, exitGame, loadQuoteForSymbol,
     onSearchInput, onSearchFocus, selectStock,
     setTradeType, executeTrade, setMaxShares, updateTradeTotal, onOrderTypeChange, cancelOrder,
-    filterFutures, selectFutures, setFuturesDir, updateFuturesTotal, setMaxFuturesContracts, openFuturesPosition,
+    filterFutures, selectFutures, setFuturesDir, updateFuturesTotal, updateFuturesSim, setMaxFuturesContracts, openFuturesPosition,
     openSellModal, closeSellModal, updateSellModalTotal, setSellModalMax, executeSellModal,
     openCloseFuturesModal, closeCloseFuturesModal, updateCfmTotal, setCfmMax, executeClosePosition,
     editGame, resetAdminForm, saveGameConfig,
