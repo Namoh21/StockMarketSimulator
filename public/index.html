@@ -456,8 +456,20 @@
         <input type="hidden" id="admin-edit-id">
         <div class="form-group"><label>Game Title</label><input id="admin-title" type="text" placeholder="e.g. Spring Trading Challenge"></div>
         <div class="admin-grid">
-          <div class="form-group"><label>Start Date</label><input id="admin-start" type="date"></div>
-          <div class="form-group"><label>End Date</label><input id="admin-end" type="date"></div>
+          <div class="form-group">
+            <label>Start Date</label>
+            <input id="admin-start" type="date">
+            <div class="shares-hint" style="margin-top:5px">⏰ Game begins at market open — <strong>9:30 AM ET</strong> on this date</div>
+          </div>
+          <div class="form-group">
+            <label>End Date</label>
+            <input id="admin-end" type="date">
+            <div class="shares-hint" style="margin-top:5px">🔔 Game ends at market close — <strong>4:00 PM ET</strong> on this date</div>
+          </div>
+        </div>
+        <div class="info-box" style="margin-bottom:4px">
+          📅 <strong>US Market Hours:</strong> Mon–Fri, 9:30 AM – 4:00 PM Eastern Time (ET). Trading is not available on federal holidays.
+          Prices shown outside market hours reflect the last known closing price. Choose weekdays for your start and end dates for best results.
         </div>
         <div class="admin-grid">
           <div class="form-group"><label>Starting Cash ($)</label><input id="admin-cash" type="number" min="100" step="100" placeholder="10000"></div>
