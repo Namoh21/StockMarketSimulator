@@ -285,6 +285,7 @@ function gameStatus(game) {
 function loadGame(req, res, next) {
   const game = db.prepare('SELECT * FROM game_config WHERE id = ?').get(req.params.gameId);
   if (!game) return res.status(404).json({ error: 'Game not found' });
+  // keep join_password on req.game for internal use; publicGame() strips it before sending to clients
   req.game = { ...game, markets: JSON.parse(game.markets), status: gameStatus(game) };
   next();
 }
@@ -390,18 +391,24 @@ app.delete('/api/user/api-keys/:keyId', requireAuth, (req, res) => {
 // GAMES — list, create, get, update (non-destructive)
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// Strip join_password from game objects before sending to clients
+function publicGame(g, extra = {}) {
+  const { join_password, ...safe } = g;
+  return { ...safe, markets: Array.isArray(g.markets) ? g.markets : JSON.parse(g.markets), status: gameStatus(g), ...extra };
+}
+
 app.get('/api/games', requireAuth, (req, res) => {
   const games = db.prepare('SELECT * FROM game_config ORDER BY created_at DESC').all();
   const result = games.map(g => {
     const playerCount = db.prepare('SELECT COUNT(*) as c FROM portfolios WHERE game_id = ?').get(g.id).c;
     const userJoined  = !!db.prepare('SELECT id FROM portfolios WHERE user_id = ? AND game_id = ?').get(req.user.id, g.id);
-    return { ...g, markets: JSON.parse(g.markets), status: gameStatus(g), player_count: playerCount, user_joined: userJoined };
+    return publicGame(g, { player_count: playerCount, user_joined: userJoined });
   });
   res.json(result);
 });
 
 app.post('/api/games', requireAdmin, (req, res) => {
-  const { title, start_date, end_date, starting_cash, markets, allow_fractional, allow_futures, futures_margin } = req.body || {};
+  const { title, start_date, end_date, starting_cash, markets, allow_fractional, allow_futures, futures_margin, is_private, join_password } = req.body || {};
   if (!start_date || !end_date || !starting_cash)
     return res.status(400).json({ error: 'start_date, end_date, and starting_cash are required' });
   if (new Date(end_date) <= new Date(start_date))
@@ -411,27 +418,37 @@ app.post('/api/games', requireAdmin, (req, res) => {
   const safeMarkets = (markets?.length ? markets : ['NYSE', 'NASDAQ']).filter(m => ALLOWED_MARKETS.has(m));
   if (!safeMarkets.length)
     return res.status(400).json({ error: 'At least one valid market is required (NYSE, NASDAQ, AMEX, ALL)' });
+  const priv = is_private ? 1 : 0;
+  if (priv && !join_password?.trim())
+    return res.status(400).json({ error: 'A join password is required for private games' });
 
   const { lastInsertRowid } = db.prepare(
-    `INSERT INTO game_config (title, start_date, end_date, starting_cash, markets, allow_fractional, allow_futures, futures_margin, is_active)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`
+    `INSERT INTO game_config (title, start_date, end_date, starting_cash, markets, allow_fractional, allow_futures, futures_margin, is_active, is_private, join_password)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
   ).run(
     title?.trim() || 'Stock Trading Game',
     start_date, end_date, starting_cash,
     JSON.stringify(safeMarkets),
     allow_fractional ? 1 : 0,
     allow_futures    ? 1 : 0,
-    parseFloat(futures_margin) || 0.20
+    parseFloat(futures_margin) || 0.20,
+    priv,
+    priv ? join_password.trim() : null
   );
   const game = db.prepare('SELECT * FROM game_config WHERE id = ?').get(lastInsertRowid);
   res.json({ ...game, markets: JSON.parse(game.markets), status: gameStatus(game) });
 });
 
 app.get('/api/games/:gameId', requireAuth, loadGame, (req, res) => {
-  const g = req.game;
+  const g = db.prepare('SELECT * FROM game_config WHERE id = ?').get(req.game.id); // re-fetch to get join_password for admin
   const playerCount = db.prepare('SELECT COUNT(*) as c FROM portfolios WHERE game_id = ?').get(g.id).c;
   const userJoined  = !!db.prepare('SELECT id FROM portfolios WHERE user_id = ? AND game_id = ?').get(req.user.id, g.id);
-  res.json({ ...g, player_count: playerCount, user_joined: userJoined });
+  const dbUser = db.prepare('SELECT is_admin FROM users WHERE id = ?').get(req.user.id);
+  // Admins see the join_password so they can share it; regular users never see it
+  if (dbUser?.is_admin) {
+    return res.json({ ...g, markets: JSON.parse(g.markets), status: gameStatus(g), player_count: playerCount, user_joined: userJoined });
+  }
+  res.json(publicGame(g, { player_count: playerCount, user_joined: userJoined }));
 });
 
 // Non-destructive update — cannot change starting_cash if players exist; cannot move start_date once game started
@@ -447,6 +464,13 @@ app.put('/api/games/:gameId', requireAdmin, loadGame, (req, res) => {
   if (body.end_date && new Date(body.end_date) <= new Date(body.start_date || game.start_date))
     return res.status(400).json({ error: 'end_date must be after start_date' });
 
+  const newPrivate = body.is_private !== undefined ? (body.is_private ? 1 : 0) : game.is_private;
+  const newPassword = newPrivate
+    ? (body.join_password?.trim() || game.join_password || null)
+    : null;
+  if (newPrivate && !newPassword)
+    return res.status(400).json({ error: 'A join password is required for private games' });
+
   db.prepare(
     `UPDATE game_config SET
        title            = ?,
@@ -457,7 +481,9 @@ app.put('/api/games/:gameId', requireAdmin, loadGame, (req, res) => {
        allow_fractional = ?,
        allow_futures    = ?,
        futures_margin   = ?,
-       is_active        = ?
+       is_active        = ?,
+       is_private       = ?,
+       join_password    = ?
      WHERE id = ?`
   ).run(
     body.title?.trim()                              ?? game.title,
@@ -469,6 +495,8 @@ app.put('/api/games/:gameId', requireAdmin, loadGame, (req, res) => {
     body.allow_futures    !== undefined ? (body.allow_futures    ? 1 : 0) : game.allow_futures,
     body.futures_margin   != null       ? parseFloat(body.futures_margin) : game.futures_margin,
     body.is_active        !== undefined ? (body.is_active ? 1 : 0)        : game.is_active,
+    newPrivate,
+    newPassword,
     game.id
   );
   const updated = db.prepare('SELECT * FROM game_config WHERE id = ?').get(game.id);
@@ -478,13 +506,23 @@ app.put('/api/games/:gameId', requireAdmin, loadGame, (req, res) => {
 // Join a game (creates portfolio if not already joined)
 app.post('/api/games/:gameId/join', requireAuth, loadGame, (req, res) => {
   const game = req.game;
-  const dbUser = db.prepare('SELECT is_approved FROM users WHERE id = ?').get(req.user.id);
+  const dbUser = db.prepare('SELECT is_approved, is_admin FROM users WHERE id = ?').get(req.user.id);
   if (!dbUser?.is_approved)
     return res.status(403).json({ error: 'Your account is pending admin approval. You cannot join games yet.' });
   if (game.status === 'ended')
     return res.status(400).json({ error: 'This game has already ended' });
   const existing = db.prepare('SELECT * FROM portfolios WHERE user_id = ? AND game_id = ?').get(req.user.id, game.id);
   if (existing) return res.json({ message: 'Already joined', already_joined: true });
+
+  // Private game — check join password (admins bypass)
+  const fullGame = db.prepare('SELECT * FROM game_config WHERE id = ?').get(game.id);
+  if (fullGame.is_private && !dbUser.is_admin) {
+    const supplied = req.body?.join_password?.trim();
+    if (!supplied) return res.status(403).json({ error: 'private_game', message: 'This game is password-protected. Enter the join password.' });
+    if (supplied !== fullGame.join_password)
+      return res.status(403).json({ error: 'wrong_password', message: 'Incorrect join password.' });
+  }
+
   db.prepare('INSERT INTO portfolios (user_id, game_id, cash_balance) VALUES (?, ?, ?)').run(req.user.id, game.id, game.starting_cash);
   res.json({ message: `Joined "${game.title}" — starting cash $${game.starting_cash.toLocaleString()}`, already_joined: false });
 });
@@ -528,6 +566,26 @@ app.get('/api/games/:gameId/players', requireAdmin, loadGame, (req, res) => {
      FROM portfolios p JOIN users u ON p.user_id = u.id
      WHERE p.game_id = ? ORDER BY p.joined_at`
   ).all(req.game.id));
+});
+
+// Remove a player from one game only — their account and other games are untouched
+app.delete('/api/games/:gameId/players/:userId', requireAdmin, loadGame, (req, res) => {
+  const { id: gameId } = req.game;
+  const userId = parseInt(req.params.userId);
+  const target = db.prepare('SELECT u.username, u.is_admin FROM users u JOIN portfolios p ON u.id = p.user_id WHERE u.id = ? AND p.game_id = ?').get(userId, gameId);
+  if (!target) return res.status(404).json({ error: 'Player not found in this game' });
+  if (target.is_admin) return res.status(400).json({ error: 'Cannot remove an admin from a game' });
+
+  db.transaction(() => {
+    db.prepare('DELETE FROM pending_orders       WHERE user_id = ? AND game_id = ?').run(userId, gameId);
+    db.prepare('DELETE FROM futures_transactions WHERE user_id = ? AND game_id = ?').run(userId, gameId);
+    db.prepare('DELETE FROM futures_positions    WHERE user_id = ? AND game_id = ?').run(userId, gameId);
+    db.prepare('DELETE FROM transactions         WHERE user_id = ? AND game_id = ?').run(userId, gameId);
+    db.prepare('DELETE FROM holdings             WHERE user_id = ? AND game_id = ?').run(userId, gameId);
+    db.prepare('DELETE FROM portfolios           WHERE user_id = ? AND game_id = ?').run(userId, gameId);
+  })();
+
+  res.json({ message: `${target.username} has been removed from this game. Their account and other games are unaffected.` });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════

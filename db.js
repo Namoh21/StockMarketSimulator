@@ -20,6 +20,8 @@ db.exec(`
     allow_futures    INTEGER NOT NULL DEFAULT 0,
     futures_margin   REAL    NOT NULL DEFAULT 0.20,
     is_active        INTEGER NOT NULL DEFAULT 1,
+    is_private       INTEGER NOT NULL DEFAULT 0,
+    join_password    TEXT,
     created_at       TEXT    NOT NULL DEFAULT (datetime('now'))
   );
 
@@ -145,6 +147,8 @@ const migrations = [
   "ALTER TABLE portfolios     ADD COLUMN joined_at        TEXT    NOT NULL DEFAULT (datetime('now'))",
   "ALTER TABLE pending_orders ADD COLUMN reserved_amount  REAL    NOT NULL DEFAULT 0",
   "ALTER TABLE users          ADD COLUMN is_approved      INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE game_config    ADD COLUMN is_private       INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE game_config    ADD COLUMN join_password    TEXT",
 ];
 for (const sql of migrations) { try { db.exec(sql); } catch {} }
 

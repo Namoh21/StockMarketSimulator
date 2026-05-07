@@ -633,6 +633,12 @@
           <div class="toggle-row"><input type="checkbox" id="admin-fractional" checked><label for="admin-fractional">Allow fractional shares</label></div>
           <div class="toggle-row"><input type="checkbox" id="admin-futures"><label for="admin-futures">Enable futures trading</label></div>
           <div class="toggle-row"><input type="checkbox" id="admin-active" checked><label for="admin-active">Active (visible to players)</label></div>
+          <div class="toggle-row"><input type="checkbox" id="admin-private" onchange="App.onPrivateToggle()"><label for="admin-private">🔒 Private game (password required to join)</label></div>
+        </div>
+        <div class="form-group" id="admin-password-group" style="display:none">
+          <label for="admin-join-password">Join Password</label>
+          <input id="admin-join-password" type="text" placeholder="e.g. spring2025 — share this with allowed players">
+          <div class="shares-hint">Players must enter this password to join. Admins can always join without it.</div>
         </div>
         <div id="admin-error" class="error-msg" style="margin-bottom:8px"></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -805,6 +811,33 @@ Market orders fill immediately if market is open, else queue for open.</pre>
     </div>
     <div id="sell-modal-error" class="error-msg" style="margin-bottom:8px"></div>
     <button class="btn btn-full btn-red" id="sell-modal-btn" onclick="App.executeSellModal()"><span id="sell-modal-label">Sell</span></button>
+  </div>
+</div>
+
+<!-- ══ JOIN PASSWORD MODAL ═══════════════════════════════════════════════════ -->
+<div id="join-pw-modal" class="modal-backdrop" style="display:none" onclick="if(event.target===this)App.closeJoinPwModal()">
+  <div class="modal-card" style="max-width:380px" role="dialog" aria-modal="true" aria-label="Private Game">
+    <div class="modal-header"><h3>🔒 Private Game</h3><button class="modal-close" onclick="App.closeJoinPwModal()">✕</button></div>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:14px">This game is password-protected. Enter the join password to get access.</p>
+    <div class="form-group">
+      <label for="join-pw-input">Join Password</label>
+      <input id="join-pw-input" type="password" placeholder="Enter password…" autocomplete="off">
+    </div>
+    <div id="join-pw-error" class="error-msg" style="margin-bottom:8px"></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-primary btn-full" id="join-pw-btn" onclick="App.submitJoinPassword()">Join Game</button>
+      <button class="btn btn-ghost" onclick="App.closeJoinPwModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ GAME PLAYERS MODAL ════════════════════════════════════════════════════ -->
+<div id="game-players-modal" class="modal-backdrop" style="display:none" onclick="if(event.target===this)App.closeGamePlayersModal()">
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="gpm-title">
+    <div class="modal-header"><h3 id="gpm-title">Game Players</h3><button class="modal-close" onclick="App.closeGamePlayersModal()">✕</button></div>
+    <div id="gpm-body">
+      <div class="empty"><div class="empty-icon">👥</div><div class="empty-text">No players yet.</div></div>
+    </div>
   </div>
 </div>
 
@@ -1027,7 +1060,7 @@ const App = (() => {
       if (!games.length) { list.innerHTML=''; empty.style.display=''; return; }
       empty.style.display='none';
       list.innerHTML = games.map(g => {
-        const statusBadge = `<span class="badge-status badge-${g.status}">${g.status.toUpperCase()}</span>`;
+        const statusBadge = `<span class="badge-status badge-${g.status}">${g.status.toUpperCase()}</span>${g.is_private?' <span title="Password protected" style="color:var(--gold)">🔒</span>':''}`;
         const markets = (g.markets||[]).join(', ');
         const futures = g.allow_futures ? '<span class="game-tag">Futures enabled</span>' : '';
         const canJoin = g.status !== 'ended';
@@ -1056,15 +1089,51 @@ const App = (() => {
     } catch(err) { console.error(err); }
   }
 
+  let joinPwGameId = null;
   async function joinAndEnter(gameId) {
     try {
       const gameData = await api('GET',`/api/games/${gameId}`);
       if (!gameData.user_joined && gameData.status !== 'ended') {
+        if (gameData.is_private) {
+          // Show password modal — actual join happens in submitJoinPassword
+          joinPwGameId = gameId;
+          document.getElementById('join-pw-input').value = '';
+          document.getElementById('join-pw-error').textContent = '';
+          document.getElementById('join-pw-btn').disabled = false;
+          document.getElementById('join-pw-btn').textContent = 'Join Game';
+          document.getElementById('join-pw-modal').style.display = 'flex';
+          setTimeout(() => document.getElementById('join-pw-input').focus(), 50);
+          return;
+        }
         await api('POST',`/api/games/${gameId}/join`);
         toast(`Joined "${gameData.title}"!`, 'success');
       }
       enterGame(gameData);
     } catch(err) { toast(err.message,'error'); }
+  }
+
+  function closeJoinPwModal() {
+    document.getElementById('join-pw-modal').style.display = 'none';
+    joinPwGameId = null;
+  }
+
+  async function submitJoinPassword() {
+    const pw = document.getElementById('join-pw-input').value;
+    const errEl = document.getElementById('join-pw-error');
+    const btn = document.getElementById('join-pw-btn');
+    errEl.textContent = '';
+    if (!pw) { errEl.textContent = 'Enter the join password.'; return; }
+    btn.disabled = true; btn.textContent = '…';
+    try {
+      await api('POST', `/api/games/${joinPwGameId}/join`, { join_password: pw });
+      closeJoinPwModal();
+      const gameData = await api('GET', `/api/games/${joinPwGameId}`);
+      toast(`Joined "${gameData.title}"!`, 'success');
+      enterGame(gameData);
+    } catch(err) {
+      errEl.textContent = err.message;
+      btn.disabled = false; btn.textContent = 'Join Game';
+    }
   }
 
   // ── Portfolio countdown ────────────────────────────────────────────────────
@@ -1753,13 +1822,14 @@ const App = (() => {
         <div class="table-wrap"><table>
           <thead><tr><th>Title</th><th>Status</th><th>Dates</th><th>Starting Cash</th><th>Players</th><th>Futures</th><th></th></tr></thead>
           <tbody>${games.map(g=>`<tr>
-            <td><strong>${esc(g.title)}</strong></td>
+            <td><strong>${esc(g.title)}</strong>${g.is_private?` <span title="Password protected" style="color:var(--gold)">🔒</span>`:''}</td>
             <td><span class="badge-status badge-${g.status}">${g.status.toUpperCase()}</span>${g.is_active?'':' <span class="muted">(hidden)</span>'}</td>
             <td class="muted">${fmtDateShort(g.start_date)} → ${fmtDateShort(g.end_date)}</td>
             <td>${fmt$(g.starting_cash,0)}</td>
             <td>${g.player_count}</td>
             <td>${g.allow_futures?'<span class="green">✓</span>':'<span class="muted">—</span>'}</td>
             <td><div style="display:flex;gap:5px">
+              <button class="btn btn-ghost btn-sm" data-id="${g.id}" data-title="${esc(g.title)}" onclick="App.openGamePlayersModal(parseInt(this.dataset.id),this.dataset.title)">👥 Players</button>
               <button class="btn btn-ghost btn-sm" onclick="App.editGame(${g.id})">Edit</button>
               <button class="btn btn-red btn-sm" data-id="${g.id}" data-title="${esc(g.title)}" data-count="${g.player_count}" onclick="App.openDeleteModal(parseInt(this.dataset.id),this.dataset.title,parseInt(this.dataset.count))">Delete</button>
             </div></td>
@@ -1796,6 +1866,12 @@ const App = (() => {
     } catch(err){console.error(err);}
   }
 
+  function onPrivateToggle() {
+    const isPrivate = document.getElementById('admin-private').checked;
+    document.getElementById('admin-password-group').style.display = isPrivate ? '' : 'none';
+    if (!isPrivate) document.getElementById('admin-join-password').value = '';
+  }
+
   async function editGame(id) {
     try {
       const g = await api('GET',`/api/games/${id}`);
@@ -1808,6 +1884,9 @@ const App = (() => {
       document.getElementById('admin-fractional').checked=!!g.allow_fractional;
       document.getElementById('admin-futures').checked=!!g.allow_futures;
       document.getElementById('admin-active').checked=!!g.is_active;
+      document.getElementById('admin-private').checked=!!g.is_private;
+      document.getElementById('admin-join-password').value=g.join_password||'';
+      document.getElementById('admin-password-group').style.display=g.is_private?'':'none';
       const markets=Array.isArray(g.markets)?g.markets:JSON.parse(g.markets||'[]');
       document.querySelectorAll('input[name=market]').forEach(cb=>cb.checked=markets.includes(cb.value));
       document.getElementById('admin-form-title').textContent=`Edit: ${g.title}`;
@@ -1827,6 +1906,9 @@ const App = (() => {
     document.getElementById('admin-fractional').checked=true;
     document.getElementById('admin-futures').checked=false;
     document.getElementById('admin-active').checked=true;
+    document.getElementById('admin-private').checked=false;
+    document.getElementById('admin-join-password').value='';
+    document.getElementById('admin-password-group').style.display='none';
     document.querySelectorAll('input[name=market]').forEach(cb=>cb.checked=['NYSE','NASDAQ'].includes(cb.value));
     document.getElementById('admin-form-title').textContent='Create New Simulation';
     document.getElementById('admin-save-btn').textContent='Create Simulation';
@@ -1848,6 +1930,8 @@ const App = (() => {
       markets, allow_fractional:document.getElementById('admin-fractional').checked,
       allow_futures:document.getElementById('admin-futures').checked,
       is_active:document.getElementById('admin-active').checked,
+      is_private:document.getElementById('admin-private').checked,
+      join_password:document.getElementById('admin-join-password').value.trim()||undefined,
     };
     try {
       if(editId) { await api('PUT',`/api/games/${editId}`,body); toast('Simulation updated!','success'); }
@@ -1934,6 +2018,54 @@ const App = (() => {
     const btn=document.getElementById('cfm-btn');btn.disabled=true;document.getElementById('cfm-label').innerHTML='<span class="spinner"></span>';
     try{const r=await api('POST',`/api/games/${currentGameId}/futures/close`,{symbol:cfmSymbol,contracts:c});closeCloseFuturesModal();toast(r.message,'success');await loadPortfolio();}
     catch(err){errEl.textContent=err.message;btn.disabled=false;document.getElementById('cfm-label').textContent=`Close ${cfmSymbol}`;}
+  }
+
+  // ── Game players modal ────────────────────────────────────────────────────
+  let gpmGameId = null;
+  async function openGamePlayersModal(gameId, title) {
+    gpmGameId = gameId;
+    document.getElementById('gpm-title').textContent = `👥 Players — ${title}`;
+    document.getElementById('gpm-body').innerHTML = '<div class="empty"><div class="empty-icon" style="font-size:24px">⏳</div><div class="empty-text">Loading…</div></div>';
+    document.getElementById('game-players-modal').style.display = 'flex';
+    try {
+      const players = await api('GET', `/api/games/${gameId}/players`);
+      if (!players.length) {
+        document.getElementById('gpm-body').innerHTML = '<div class="empty"><div class="empty-icon">👥</div><div class="empty-text">No players have joined yet.</div></div>';
+        return;
+      }
+      document.getElementById('gpm-body').innerHTML = `
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Player</th><th class="text-right">Cash Balance</th><th>Joined</th><th></th></tr></thead>
+            <tbody>${players.map(p=>`<tr>
+              <td><strong>${esc(p.username)}</strong>${p.is_admin?` <span class="badge badge-admin" style="font-size:9px">ADMIN</span>`:''}</td>
+              <td class="text-right">${fmt$(p.cash_balance)}</td>
+              <td class="muted">${fmtDate(p.joined_at)}</td>
+              <td>${!p.is_admin?`<button class="btn btn-red btn-sm" data-uid="${p.id}" data-name="${esc(p.username)}" onclick="App.removePlayerFromGame(parseInt(this.dataset.uid),this.dataset.name)">Remove</button>`:''}</td>
+            </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>`;
+    } catch(err) {
+      document.getElementById('gpm-body').innerHTML = `<div class="error-msg" style="padding:12px">${esc(err.message)}</div>`;
+    }
+  }
+
+  function closeGamePlayersModal() {
+    document.getElementById('game-players-modal').style.display = 'none';
+    gpmGameId = null;
+  }
+
+  async function removePlayerFromGame(userId, username) {
+    if (!confirm(`Remove "${username}" from this game?\n\nTheir account and any other games they've joined will not be affected.`)) return;
+    try {
+      const r = await api('DELETE', `/api/games/${gpmGameId}/players/${userId}`);
+      toast(r.message, 'success');
+      // Refresh the modal
+      const titleEl = document.getElementById('gpm-title');
+      await openGamePlayersModal(gpmGameId, titleEl.textContent.replace('👥 Players — ',''));
+      loadAdmin();
+    } catch(err) { toast(err.message, 'error'); }
   }
 
   // ── User approval ─────────────────────────────────────────────────────────
@@ -2053,8 +2185,9 @@ const App = (() => {
 
   // ── Keyboard ───────────────────────────────────────────────────────────────
   document.addEventListener('keydown', e => {
-    if(e.key==='Escape'){ closeSellModal(); closeCloseFuturesModal(); closeDeleteModal(); }
+    if(e.key==='Escape'){ closeSellModal(); closeCloseFuturesModal(); closeDeleteModal(); closeJoinPwModal(); closeGamePlayersModal(); }
     if(e.key==='Enter'){
+      if(document.getElementById('join-pw-modal').style.display!=='none'){submitJoinPassword();return;}
       if(document.getElementById('sell-modal').style.display!=='none'){executeSellModal();return;}
       if(document.getElementById('close-futures-modal').style.display!=='none'){executeClosePosition();return;}
       if(document.getElementById('form-login').style.display!=='none') login();
@@ -2075,6 +2208,9 @@ const App = (() => {
   return {
     navigate, login, register, logout, switchAuthTab,
     loadGames, joinAndEnter, exitGame, loadQuoteForSymbol,
+    closeJoinPwModal, submitJoinPassword,
+    openGamePlayersModal, closeGamePlayersModal, removePlayerFromGame,
+    onPrivateToggle,
     onSearchInput, onSearchFocus, selectStock,
     setTradeType, executeTrade, setMaxShares, updateTradeTotal, onOrderTypeChange, cancelOrder,
     filterFutures, selectFutures, setFuturesDir, updateFuturesTotal, updateFuturesSim, setMaxFuturesContracts, openFuturesPosition,
