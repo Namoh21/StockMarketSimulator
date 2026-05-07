@@ -44,17 +44,26 @@ npm start
 
 ## Raspberry Pi Setup
 
+**One-liner install** (clones the repo, installs Node.js, sets up a systemd service that starts on boot):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Namoh21/StockMarketSimulator/main/install.sh | bash
+```
+
+Or clone and run manually:
+
 ```bash
 # Install build tools (needed for better-sqlite3)
 sudo apt-get update
-sudo apt-get install -y build-essential python3
+sudo apt-get install -y build-essential python3 git curl
 
-# Install Node.js 18+ if not already installed
+# Install Node.js 20.x
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt-get install -y nodejs
 
-# Clone / copy project files to Pi, then:
-cd /home/pi/stock-game
+# Clone the repo
+git clone https://github.com/Namoh21/StockMarketSimulator ~/StockMarketSimulator
+cd ~/StockMarketSimulator
 npm install
 npm start
 ```
@@ -62,6 +71,18 @@ npm start
 The server binds to `0.0.0.0:8081`. Share your Pi's local IP with friends:
 ```
 http://192.168.x.x:8081
+```
+
+### Service management (after install.sh)
+```bash
+sudo systemctl status stockarena    # check status
+sudo journalctl -u stockarena -f    # live logs
+sudo systemctl restart stockarena   # restart
+```
+
+### Update to latest version
+```bash
+cd ~/StockMarketSimulator && git pull && npm install --omit=dev && sudo systemctl restart stockarena
 ```
 
 ---
