@@ -1,9 +1,12 @@
-const express = require('express');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const yf = require('yahoo-finance2').default;
-const path = require('path');
-const db = require('./db');
+import express from 'express';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import yf from 'yahoo-finance2';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import db from './db.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 const PORT = process.env.PORT || 8081;
