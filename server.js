@@ -604,6 +604,20 @@ app.get('/api/games/:gameId/futures/history', requireAuth, loadGame, (req, res) 
   res.json(db.prepare('SELECT * FROM futures_transactions WHERE user_id = ? AND game_id = ? ORDER BY executed_at DESC LIMIT 200').all(req.user.id, req.game.id));
 });
 
+// Delete a game and all associated data
+app.delete('/api/games/:gameId', requireAdmin, loadGame, (req, res) => {
+  const { id, title } = req.game;
+  db.transaction(() => {
+    db.prepare('DELETE FROM futures_transactions WHERE game_id = ?').run(id);
+    db.prepare('DELETE FROM futures_positions  WHERE game_id = ?').run(id);
+    db.prepare('DELETE FROM transactions       WHERE game_id = ?').run(id);
+    db.prepare('DELETE FROM holdings           WHERE game_id = ?').run(id);
+    db.prepare('DELETE FROM portfolios         WHERE game_id = ?').run(id);
+    db.prepare('DELETE FROM game_config        WHERE id = ?').run(id);
+  })();
+  res.json({ message: `"${title}" and all its data have been deleted.` });
+});
+
 // ── Admin ─────────────────────────────────────────────────────────────────────
 app.get('/api/admin/players', requireAdmin, (req, res) => {
   res.json(db.prepare('SELECT id, username, email, is_admin, created_at FROM users ORDER BY created_at').all());

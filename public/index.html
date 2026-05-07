@@ -521,6 +521,19 @@
   </div>
 </div>
 
+<!-- ══ DELETE GAME MODAL ══════════════════════════════════════════════════════ -->
+<div id="delete-game-modal" class="modal-backdrop" style="display:none" onclick="if(event.target===this)App.closeDeleteModal()">
+  <div class="modal-card" style="max-width:380px">
+    <div class="modal-header"><h3>Delete Simulation</h3><button class="modal-close" onclick="App.closeDeleteModal()">✕</button></div>
+    <div class="warn-box" id="delete-modal-info"></div>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:16px">This permanently removes the game, all portfolios, holdings, trades, and futures positions. <strong style="color:var(--red)">This cannot be undone.</strong></p>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-red btn-full" id="delete-confirm-btn" onclick="App.confirmDeleteGame()">Delete Permanently</button>
+      <button class="btn btn-ghost" onclick="App.closeDeleteModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══ CLOSE FUTURES MODAL ════════════════════════════════════════════════════ -->
 <div id="close-futures-modal" class="modal-backdrop" style="display:none" onclick="if(event.target===this)App.closeCloseFuturesModal()">
   <div class="modal-card">
@@ -1089,7 +1102,10 @@ const App = (() => {
             <td>${fmt$(g.starting_cash,0)}</td>
             <td>${g.player_count}</td>
             <td>${g.allow_futures?'<span class="green">✓</span>':'<span class="muted">—</span>'}</td>
-            <td><button class="btn btn-ghost btn-sm" onclick="App.editGame(${g.id})">Edit</button></td>
+            <td><div style="display:flex;gap:5px">
+              <button class="btn btn-ghost btn-sm" onclick="App.editGame(${g.id})">Edit</button>
+              <button class="btn btn-red btn-sm" onclick="App.openDeleteModal(${g.id},'${g.title.replace(/'/g,"\\'")}',${g.player_count})">Delete</button>
+            </div></td>
           </tr>`).join('')}</tbody>
         </table></div>` : '<div class="muted" style="margin-bottom:16px">No simulations yet.</div>';
       // Players
@@ -1216,9 +1232,40 @@ const App = (() => {
     catch(err){errEl.textContent=err.message;btn.disabled=false;document.getElementById('cfm-label').textContent=`Close ${cfmSymbol}`;}
   }
 
+  // ── Delete game modal ─────────────────────────────────────────────────────
+  let deleteGameId = null;
+  function openDeleteModal(id, title, playerCount) {
+    deleteGameId = id;
+    const warn = playerCount > 0
+      ? `⚠️ <strong>${playerCount} player${playerCount!==1?'s have':' has'}</strong> joined this game. All their portfolios and trade history will be permanently erased.`
+      : `You are about to delete "<strong>${title}</strong>".`;
+    document.getElementById('delete-modal-info').innerHTML = warn;
+    document.getElementById('delete-confirm-btn').disabled = false;
+    document.getElementById('delete-confirm-btn').textContent = 'Delete Permanently';
+    document.getElementById('delete-game-modal').style.display = 'flex';
+  }
+  function closeDeleteModal() {
+    document.getElementById('delete-game-modal').style.display = 'none';
+    deleteGameId = null;
+  }
+  async function confirmDeleteGame() {
+    if (!deleteGameId) return;
+    const btn = document.getElementById('delete-confirm-btn');
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+    try {
+      const r = await api('DELETE', `/api/games/${deleteGameId}`);
+      closeDeleteModal();
+      toast(r.message, 'success');
+      loadAdmin();
+    } catch(err) {
+      toast(err.message, 'error');
+      btn.disabled = false; btn.textContent = 'Delete Permanently';
+    }
+  }
+
   // ── Keyboard ───────────────────────────────────────────────────────────────
   document.addEventListener('keydown', e => {
-    if(e.key==='Escape'){ closeSellModal(); closeCloseFuturesModal(); }
+    if(e.key==='Escape'){ closeSellModal(); closeCloseFuturesModal(); closeDeleteModal(); }
     if(e.key==='Enter'){
       if(document.getElementById('sell-modal').style.display!=='none'){executeSellModal();return;}
       if(document.getElementById('close-futures-modal').style.display!=='none'){executeClosePosition();return;}
@@ -1246,6 +1293,7 @@ const App = (() => {
     openSellModal, closeSellModal, updateSellModalTotal, setSellModalMax, executeSellModal,
     openCloseFuturesModal, closeCloseFuturesModal, updateCfmTotal, setCfmMax, executeClosePosition,
     editGame, resetAdminForm, saveGameConfig,
+    openDeleteModal, closeDeleteModal, confirmDeleteGame,
   };
 })();
 </script>
