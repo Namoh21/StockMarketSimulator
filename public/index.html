@@ -2004,11 +2004,11 @@ const App = (() => {
     errEl.textContent = '';
     try {
       const r = await api('POST', '/api/user/api-keys', { label });
+      await loadApiKeys();  // refresh list before revealing (loadApiKeys hides the reveal div)
       document.getElementById('apikey-new-value').textContent = r.key;
       document.getElementById('apikey-reveal').style.display = '';
       document.getElementById('apikey-label').value = '';
       document.getElementById('apikey-copy-btn').textContent = 'Copy';
-      await loadApiKeys();
     } catch(err) { errEl.textContent = err.message; }
   }
 
