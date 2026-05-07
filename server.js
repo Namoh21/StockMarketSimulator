@@ -1,12 +1,29 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import yf from 'yahoo-finance2';
+import * as yfModule from 'yahoo-finance2';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import db from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// yahoo-finance2 export shape varies by version — resolve the live instance
+const yf = (() => {
+  const d = yfModule.default;
+  // v2.x ESM: default export IS the instance
+  if (typeof d?.search === 'function') return d;
+  // Some builds double-wrap under .default.default
+  if (typeof d?.default?.search === 'function') return d.default;
+  // Namespace export: methods are directly on the module object
+  if (typeof yfModule.search === 'function') return yfModule;
+  // Last resort: log what we actually got so we can diagnose
+  console.error('[StockArena] Failed to resolve yahoo-finance2 instance.');
+  console.error('  yfModule keys :', Object.keys(yfModule).join(', '));
+  console.error('  yfModule.default type:', typeof d);
+  console.error('  yfModule.default keys:', d ? Object.keys(d).join(', ') : 'none');
+  process.exit(1);
+})();
 
 const app = express();
 const PORT = process.env.PORT || 8081;
