@@ -485,7 +485,12 @@ function applyFill(userId, gameId, symbol, companyName, type, shares, price) {
   const total = +(price * shares).toFixed(6);
   db.transaction(() => {
     if (type === 'buy') {
-      db.prepare('UPDATE portfolios SET cash_balance = cash_balance - ? WHERE user_id = ? AND game_id = ?').run(total, userId, gameId);
+      // Atomic conditional deduct — WHERE cash_balance >= total guarantees no overdraft
+      // even under concurrent requests or stale pre-checks.
+      const result = db.prepare(
+        'UPDATE portfolios SET cash_balance = cash_balance - ? WHERE user_id = ? AND game_id = ? AND cash_balance >= ?'
+      ).run(total, userId, gameId, total);
+      if (result.changes === 0) throw new Error(`Insufficient funds — need $${total.toFixed(2)}`);
       const ex = db.prepare('SELECT * FROM holdings WHERE user_id = ? AND game_id = ? AND symbol = ?').get(userId, gameId, symbol);
       if (ex) {
         const ns = ex.shares + shares;

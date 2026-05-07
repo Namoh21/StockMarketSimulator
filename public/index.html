@@ -1080,7 +1080,9 @@ const App = (() => {
     const lp = parseFloat(document.getElementById('limit-price')?.value) || currentQuote.price;
     const refPrice = (ot === 'limit' && lp > 0) ? lp : currentQuote.price;
     if (tradeType === 'buy') {
-      document.getElementById('trade-shares').value = Math.floor((portfolio?.cash_balance || 0) / refPrice * 10000) / 10000;
+      // Use 99.9% of balance so floating-point rounding never pushes cost over the limit
+      const safeBalance = (portfolio?.cash_balance || 0) * 0.9999;
+      document.getElementById('trade-shares').value = Math.floor(safeBalance / refPrice * 10000) / 10000;
     } else {
       const h = portfolio?.holdings?.find(x => x.symbol === currentSymbol);
       document.getElementById('trade-shares').value = h ? h.shares : 0;
@@ -1095,11 +1097,22 @@ const App = (() => {
     const errEl     = document.getElementById('trade-error');
     errEl.textContent = '';
 
-    if (!currentSymbol)      { errEl.textContent = 'No stock selected.'; return; }
-    if (!shares || shares<=0){ errEl.textContent = 'Enter a valid share quantity.'; return; }
-    if (!currentGameId)      { errEl.textContent = 'No game selected.'; return; }
+    if (!currentSymbol)       { errEl.textContent = 'No stock selected.'; return; }
+    if (!shares || shares<=0) { errEl.textContent = 'Enter a valid share quantity.'; return; }
+    if (!currentGameId)       { errEl.textContent = 'No game selected.'; return; }
     if (orderType === 'limit' && (!limitPrice || limitPrice <= 0)) {
       errEl.textContent = 'Enter a valid limit price.'; return;
+    }
+
+    // Client-side balance guard (server enforces this too, but catch it early)
+    if (tradeType === 'buy' && currentQuote?.price) {
+      const refPrice = (orderType === 'limit' && limitPrice > 0) ? limitPrice : currentQuote.price;
+      const estimatedCost = shares * refPrice;
+      const available     = portfolio?.cash_balance ?? 0;
+      if (estimatedCost > available + 0.001) {
+        errEl.textContent = `Insufficient funds — estimated cost $${estimatedCost.toFixed(2)}, available $${available.toFixed(2)}`;
+        return;
+      }
     }
 
     const btn = document.getElementById('trade-submit-btn');
