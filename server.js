@@ -1,16 +1,11 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import * as yfModule from 'yahoo-finance2';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import db from './db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-// yahoo-finance2 exports the YahooFinance class as default — instantiate it
-const YahooFinance = yfModule.default;
-const yf = new YahooFinance();
 
 const app = express();
 const PORT = process.env.PORT || 8081;
@@ -19,8 +14,46 @@ const JWT_SECRET = process.env.JWT_SECRET || 'stockarena-change-this-secret-in-p
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Suppress Yahoo Finance survey notices
-try { yf.suppressNotices(['yahooSurvey']); } catch {}
+// ── Yahoo Finance direct API (no external package needed) ────────────────────
+const YF_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  'Accept': 'application/json',
+  'Accept-Language': 'en-US,en;q=0.9',
+};
+
+async function yfSearch(query, count = 10) {
+  const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=${count}&newsCount=0&enableFuzzyQuery=false&lang=en-US&region=US`;
+  const res = await fetch(url, { headers: YF_HEADERS, signal: AbortSignal.timeout(8000) });
+  if (!res.ok) throw new Error(`Yahoo Finance search HTTP ${res.status}`);
+  const data = await res.json();
+  return data?.quotes || [];
+}
+
+async function yfQuote(symbol) {
+  const url = `https://query1.finance.yahoo.com/v6/finance/quote?symbols=${encodeURIComponent(symbol)}&lang=en-US&region=US`;
+  const res = await fetch(url, { headers: YF_HEADERS, signal: AbortSignal.timeout(8000) });
+  if (!res.ok) throw new Error(`Yahoo Finance quote HTTP ${res.status}`);
+  const data = await res.json();
+  const q = data?.quoteResponse?.result?.[0];
+  if (!q || q.regularMarketPrice == null) throw new Error(`No price data for ${symbol}`);
+  return q;
+}
+
+async function yfChart(symbol, period1) {
+  const p1 = Math.floor(new Date(period1).getTime() / 1000);
+  const p2 = Math.floor(Date.now() / 1000);
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&period1=${p1}&period2=${p2}`;
+  const res = await fetch(url, { headers: YF_HEADERS, signal: AbortSignal.timeout(10000) });
+  if (!res.ok) throw new Error(`Yahoo Finance chart HTTP ${res.status}`);
+  const data = await res.json();
+  const result = data?.chart?.result?.[0];
+  if (!result) return [];
+  const timestamps = result.timestamp || [];
+  const closes    = result.indicators?.quote?.[0]?.close || [];
+  return timestamps
+    .map((t, i) => ({ date: new Date(t * 1000).toISOString(), close: closes[i] }))
+    .filter(d => d.close != null);
+}
 
 // ── Price cache (5-min TTL) ──────────────────────────────────────────────────
 const priceCache = new Map();
@@ -31,9 +64,7 @@ async function getQuote(symbol) {
   const cached = priceCache.get(sym);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) return cached;
 
-  const q = await yf.quote(sym, {}, { validateResult: false });
-  if (!q || q.regularMarketPrice == null) throw new Error(`No price data for ${sym}`);
-
+  const q = await yfQuote(sym);
   const data = {
     symbol: q.symbol || sym,
     name: q.longName || q.shortName || sym,
@@ -250,13 +281,13 @@ app.get('/api/stocks/search', async (req, res) => {
   const { q } = req.query;
   if (!q || q.length < 1) return res.json([]);
   try {
-    const results = await yf.search(q, { quotesCount: 12, newsCount: 0 }, { validateResult: false });
-    const filtered = (results.quotes || [])
+    const quotes = await yfSearch(q, 12);
+    const filtered = quotes
       .filter(r => r.quoteType === 'EQUITY' && r.symbol && !r.symbol.includes('.'))
       .slice(0, 8)
       .map(r => ({
         symbol: r.symbol,
-        name: r.longname || r.shortname || r.symbol || r.dispSecIndFlag || '',
+        name: r.longname || r.shortname || r.symbol,
         exchange: r.exchange || '',
         type: r.quoteType,
       }));
@@ -279,12 +310,8 @@ app.get('/api/stocks/chart/:symbol', async (req, res) => {
   try {
     const symbol = req.params.symbol.toUpperCase();
     const period1 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const result = await yf.chart(symbol, { period1, interval: '1d' }, { validateResult: false });
-    const quotes = (result.quotes || [])
-      .filter(q => q.close != null)
-      .map(q => ({ date: q.date, close: q.close }));
-    res.json(quotes);
-  } catch (err) {
+    res.json(await yfChart(symbol, period1));
+  } catch {
     res.json([]); // return empty on failure so chart just doesn't render
   }
 });
