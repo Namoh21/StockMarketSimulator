@@ -5,7 +5,7 @@ import crypto from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import db from './db.js';
-import { emailEnabled, sendEmail, buildTradeEmail, buildDailySummaryEmail, buildRankingEmail, buildTestEmail } from './email.js';
+import { configureMailer, isEmailEnabled, sendEmail, buildTradeEmail, buildDailySummaryEmail, buildRankingEmail, buildTestEmail } from './email.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -19,6 +19,26 @@ const JWT_SECRET = (() => {
     return crypto.randomBytes(48).toString('hex');
   }
   return s;
+})();
+
+// ── SMTP config helpers ────────────────────────────────────────────────────────
+function getSetting(key) {
+  return db.prepare('SELECT value FROM server_settings WHERE key = ?').get(key)?.value || '';
+}
+function setSetting(key, value) {
+  db.prepare('INSERT INTO server_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value ?? '');
+}
+
+// Load SMTP at startup — DB values take priority over env vars
+(async () => {
+  const host = getSetting('smtp_host') || process.env.SMTP_HOST || '';
+  const port = getSetting('smtp_port') || process.env.SMTP_PORT || '587';
+  const user = getSetting('smtp_user') || process.env.SMTP_USER || '';
+  const pass = getSetting('smtp_pass') || process.env.SMTP_PASS || '';
+  const from = getSetting('email_from') || process.env.EMAIL_FROM || '';
+  const baseUrl = getSetting('base_url') || process.env.BASE_URL || `http://localhost:${PORT}`;
+  if (host && user && pass) await configureMailer({ host, port, user, pass, from, baseUrl });
+  else if (from || baseUrl) await configureMailer({ from, baseUrl }); // configure display values even without SMTP
 })();
 
 // ── CORS — allow AI agents running from any origin to reach the API ───────────
@@ -436,7 +456,7 @@ app.post('/api/user/profile/test-email', requireAuth, async (req, res) => {
   const u = db.prepare('SELECT username, email FROM users WHERE id = ?').get(req.user.id);
   if (!u?.email || u.email.endsWith('@local'))
     return res.status(400).json({ error: 'Set a real email address first.' });
-  if (!emailEnabled)
+  if (!isEmailEnabled())
     return res.status(503).json({ error: 'Email is not configured on this server. Ask your admin to set SMTP env vars.' });
   const ok = await sendEmail(u.email, 'Test Email — StockArena', buildTestEmail(u.username));
   ok ? res.json({ message: `Test email sent to ${u.email}` })
@@ -1074,6 +1094,50 @@ app.delete('/api/games/:gameId', requireAdmin, loadGame, (req, res) => {
   }
 });
 
+// ── Admin — SMTP settings ─────────────────────────────────────────────────────
+app.get('/api/admin/settings/smtp', requireAdmin, (req, res) => {
+  const pass = getSetting('smtp_pass') || (process.env.SMTP_PASS ? '••••••••' : '');
+  res.json({
+    smtp_host:  getSetting('smtp_host')  || process.env.SMTP_HOST  || '',
+    smtp_port:  getSetting('smtp_port')  || process.env.SMTP_PORT  || '587',
+    smtp_user:  getSetting('smtp_user')  || process.env.SMTP_USER  || '',
+    smtp_pass:  pass ? '••••••••' : '',   // never expose the real password
+    email_from: getSetting('email_from') || process.env.EMAIL_FROM || '',
+    base_url:   getSetting('base_url')   || process.env.BASE_URL   || `http://localhost:${PORT}`,
+    enabled:    isEmailEnabled(),
+  });
+});
+
+app.put('/api/admin/settings/smtp', requireAdmin, async (req, res) => {
+  const { smtp_host, smtp_port, smtp_user, smtp_pass, email_from, base_url } = req.body || {};
+  setSetting('smtp_host',  smtp_host  ?? '');
+  setSetting('smtp_port',  smtp_port  ?? '587');
+  setSetting('smtp_user',  smtp_user  ?? '');
+  // Only overwrite password if a new one was supplied (not the masked placeholder)
+  if (smtp_pass && smtp_pass !== '••••••••') setSetting('smtp_pass', smtp_pass);
+  setSetting('email_from', email_from ?? '');
+  setSetting('base_url',   base_url   ?? '');
+
+  const host = getSetting('smtp_host');
+  const user = getSetting('smtp_user');
+  const pass = getSetting('smtp_pass');
+  const port = getSetting('smtp_port');
+  const from = getSetting('email_from');
+  const url  = getSetting('base_url');
+  const result = await configureMailer({ host, port, user, pass, from, baseUrl: url });
+  res.json({ message: result.ok ? 'SMTP settings saved and connection verified.' : `Settings saved — but connection failed: ${result.error}`, enabled: result.ok });
+});
+
+app.post('/api/admin/settings/smtp/test', requireAdmin, async (req, res) => {
+  const { to } = req.body || {};
+  if (!to) return res.status(400).json({ error: 'Provide a "to" email address for the test.' });
+  if (!isEmailEnabled()) return res.status(503).json({ error: 'SMTP is not configured or not connected.' });
+  const admin = db.prepare('SELECT username FROM users WHERE id = ?').get(req.user.id);
+  const ok = await sendEmail(to, 'Test Email — StockArena SMTP Check', buildTestEmail(admin?.username || 'Admin'));
+  ok ? res.json({ message: `Test email sent to ${to}` })
+     : res.status(500).json({ error: 'Send failed — check server logs for SMTP error details.' });
+});
+
 // ── Admin ─────────────────────────────────────────────────────────────────────
 app.get('/api/admin/players', requireAdmin, (req, res) => {
   res.json(db.prepare('SELECT id, username, email, is_admin, is_approved, created_at FROM users ORDER BY created_at').all());
@@ -1181,7 +1245,7 @@ async function processAllPendingOrders() {
 let lastDailyEmailDate = '';
 
 async function sendDailyEmails() {
-  if (!emailEnabled) return;
+  if (!isEmailEnabled()) return;
   const users = db.prepare(
     'SELECT id, username, email, notify_daily, notify_ranking FROM users WHERE is_approved = 1 AND (notify_daily = 1 OR notify_ranking = 1)'
   ).all();

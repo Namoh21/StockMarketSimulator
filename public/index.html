@@ -661,6 +661,60 @@
 
       </div>
 
+      <!-- ── EMAIL CONFIG ── -->
+      <div class="section-title" style="margin-top:28px">✉ Email Configuration
+        <span id="smtp-status-badge" class="tag">Not configured</span>
+      </div>
+      <div class="card" style="max-width:680px;margin-bottom:24px">
+        <div class="info-box" style="margin-bottom:16px">
+          Configure an SMTP relay so StockArena can send trade alerts and daily summaries to players.
+          We recommend <strong>Brevo</strong> — free tier is 300 emails/day, no credit card required.
+          Sign up at <strong>brevo.com</strong> → <em>Settings → SMTP &amp; API → SMTP</em> to get your credentials.
+        </div>
+        <div class="admin-grid">
+          <div class="form-group">
+            <label for="smtp-host">SMTP Host</label>
+            <input id="smtp-host" type="text" placeholder="smtp-relay.brevo.com">
+          </div>
+          <div class="form-group">
+            <label for="smtp-port">Port</label>
+            <input id="smtp-port" type="number" placeholder="587">
+            <div class="shares-hint">587 = TLS/STARTTLS (recommended) · 465 = SSL · 25 = plain</div>
+          </div>
+        </div>
+        <div class="admin-grid">
+          <div class="form-group">
+            <label for="smtp-user">SMTP Username</label>
+            <input id="smtp-user" type="text" placeholder="your-brevo-login@email.com" autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label for="smtp-pass">SMTP Password / API Key</label>
+            <input id="smtp-pass" type="password" placeholder="Leave blank to keep existing" autocomplete="new-password">
+          </div>
+        </div>
+        <div class="admin-grid">
+          <div class="form-group">
+            <label for="smtp-from">From Address</label>
+            <input id="smtp-from" type="text" placeholder="StockArena &lt;noreply@yourdomain.com&gt;">
+            <div class="shares-hint">Must be a verified sender in your SMTP provider's dashboard.</div>
+          </div>
+          <div class="form-group">
+            <label for="smtp-baseurl">Site Base URL</label>
+            <input id="smtp-baseurl" type="text" placeholder="http://192.168.1.x:8081">
+            <div class="shares-hint">Used for "View Portfolio →" links inside emails.</div>
+          </div>
+        </div>
+        <div id="smtp-error" class="error-msg" style="margin-bottom:8px"></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+          <button class="btn btn-primary" onclick="App.saveSmtpSettings()" id="smtp-save-btn">Save &amp; Verify Connection</button>
+          <div style="display:flex;gap:6px;align-items:center">
+            <input id="smtp-test-to" type="email" placeholder="test@example.com"
+              style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);padding:7px 10px;font-size:13px;width:190px;outline:none">
+            <button class="btn btn-ghost" onclick="App.sendSmtpTest()" id="smtp-test-btn">Send Test</button>
+          </div>
+        </div>
+      </div>
+
       <div class="section-title">All Players</div>
       <div class="card"><div class="table-wrap"><table><thead><tr><th>Username</th><th>Role</th><th>Status</th><th>Joined</th><th></th></tr></thead><tbody id="admin-players-body"></tbody></table></div></div>
     </div>
@@ -715,37 +769,10 @@
         </div>
       </div>
 
-      <!-- Setup guide -->
-      <details class="card" style="max-width:500px">
-        <summary style="cursor:pointer;font-weight:700;font-size:13px;list-style:none;display:flex;align-items:center;gap:8px">
-          <span>⚙</span> How to enable email sending (admin setup)
-        </summary>
-        <div style="margin-top:14px;font-size:13px;color:var(--muted);line-height:1.8">
-          <p style="margin-bottom:10px">StockArena sends email via any SMTP relay. We recommend <strong style="color:var(--text)">Brevo</strong> (free tier: 300 emails/day, no credit card required).</p>
-
-          <div style="background:var(--bg3);border-radius:6px;padding:12px 14px;margin-bottom:12px">
-            <div style="font-weight:700;color:var(--text);margin-bottom:6px">1. Create a free Brevo account</div>
-            Visit <strong>brevo.com</strong> → sign up free → go to <em>Settings → SMTP &amp; API → SMTP</em> and note your credentials.
-          </div>
-
-          <div style="background:var(--bg3);border-radius:6px;padding:12px 14px;margin-bottom:12px">
-            <div style="font-weight:700;color:var(--text);margin-bottom:6px">2. Add these lines to your <code style="background:var(--bg2);padding:1px 4px;border-radius:3px">.env</code> file on the Pi</div>
-            <pre style="font-size:11px;color:var(--green);margin:0;white-space:pre-wrap">SMTP_HOST=smtp-relay.brevo.com
-SMTP_PORT=587
-SMTP_USER=your-brevo-login@email.com
-SMTP_PASS=your-brevo-smtp-key
-EMAIL_FROM=StockArena &lt;noreply@yourdomain.com&gt;
-BASE_URL=http://your-pi-ip:8081</pre>
-          </div>
-
-          <div style="background:var(--bg3);border-radius:6px;padding:12px 14px">
-            <div style="font-weight:700;color:var(--text);margin-bottom:6px">3. Restart the service &amp; test</div>
-            Run <code style="background:var(--bg2);padding:1px 4px;border-radius:3px">sudo systemctl restart stockarena</code>, then use the <strong>Send Test Email</strong> button above to confirm it's working.
-          </div>
-
-          <p style="margin-top:12px;font-size:12px">Other SMTP services that work: <strong>SendGrid</strong> (100/day free), <strong>Mailgun</strong>, <strong>SMTP2GO</strong> (1,000/month free). Same env var format applies.</p>
-        </div>
-      </details>
+      <div class="info-box" style="max-width:500px;font-size:12px">
+        ⚙ Email sending is configured by your admin in the <strong>Admin → Email Configuration</strong> section.
+        Once set up, use the <strong>Send Test Email</strong> button above to verify your address works.
+      </div>
     </div>
 
     <!-- ── API KEYS ──────────────────────────────────────────────────────────── -->
@@ -1054,7 +1081,7 @@ const App = (() => {
     if (view==='futures')     { loadFutures(); }
     if (view==='leaderboard') { loadLeaderboard(); }
     if (view==='history')     { loadHistory(); }
-    if (view==='admin')       { loadAdmin(); }
+    if (view==='admin')       { loadAdmin(); loadSmtpSettings(); }
     if (view==='apikeys')        { loadApiKeys(); }
     if (view==='notifications')  { loadNotifPrefs(); }
   }
@@ -2155,6 +2182,56 @@ const App = (() => {
     } catch(err) { toast(err.message, 'error'); }
   }
 
+  // ── Admin SMTP settings ───────────────────────────────────────────────────
+  async function loadSmtpSettings() {
+    try {
+      const s = await api('GET', '/api/admin/settings/smtp');
+      document.getElementById('smtp-host').value    = s.smtp_host || '';
+      document.getElementById('smtp-port').value    = s.smtp_port || '587';
+      document.getElementById('smtp-user').value    = s.smtp_user || '';
+      document.getElementById('smtp-pass').value    = s.smtp_pass || ''; // masked or blank
+      document.getElementById('smtp-from').value    = s.email_from || '';
+      document.getElementById('smtp-baseurl').value = s.base_url || '';
+      const badge = document.getElementById('smtp-status-badge');
+      if (badge) {
+        badge.textContent  = s.enabled ? '✓ Connected' : 'Not connected';
+        badge.style.background = s.enabled ? 'var(--green-dim)' : '';
+        badge.style.color      = s.enabled ? 'var(--green)' : '';
+      }
+    } catch {}
+  }
+
+  async function saveSmtpSettings() {
+    const errEl = document.getElementById('smtp-error');
+    const btn   = document.getElementById('smtp-save-btn');
+    errEl.textContent = ''; btn.disabled = true; btn.textContent = '…';
+    try {
+      const r = await api('PUT', '/api/admin/settings/smtp', {
+        smtp_host:  document.getElementById('smtp-host').value.trim(),
+        smtp_port:  document.getElementById('smtp-port').value.trim() || '587',
+        smtp_user:  document.getElementById('smtp-user').value.trim(),
+        smtp_pass:  document.getElementById('smtp-pass').value,
+        email_from: document.getElementById('smtp-from').value.trim(),
+        base_url:   document.getElementById('smtp-baseurl').value.trim(),
+      });
+      toast(r.message, r.enabled ? 'success' : 'error');
+      await loadSmtpSettings();
+    } catch(err) { errEl.textContent = err.message; }
+    finally { btn.disabled = false; btn.textContent = 'Save & Verify Connection'; }
+  }
+
+  async function sendSmtpTest() {
+    const to  = document.getElementById('smtp-test-to').value.trim();
+    const btn = document.getElementById('smtp-test-btn');
+    if (!to) { toast('Enter a test email address first.', 'error'); return; }
+    btn.disabled = true; btn.textContent = '…';
+    try {
+      const r = await api('POST', '/api/admin/settings/smtp/test', { to });
+      toast(r.message, 'success');
+    } catch(err) { toast(err.message, 'error'); }
+    finally { btn.disabled = false; btn.textContent = 'Send Test'; }
+  }
+
   // ── User approval ─────────────────────────────────────────────────────────
   async function approveUser(userId) {
     try {
@@ -2346,6 +2423,7 @@ const App = (() => {
     filterFutures, selectFutures, setFuturesDir, updateFuturesTotal, updateFuturesSim, setMaxFuturesContracts, openFuturesPosition,
     openSellModal, closeSellModal, updateSellModalTotal, setSellModalMax, executeSellModal,
     openCloseFuturesModal, closeCloseFuturesModal, updateCfmTotal, setCfmMax, executeClosePosition,
+    saveSmtpSettings, sendSmtpTest,
     editGame, resetAdminForm, saveGameConfig,
     approveUser, revokeUser, deletePendingUser,
     saveNotifPrefs, sendTestEmail,

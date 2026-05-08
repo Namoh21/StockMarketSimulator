@@ -107,6 +107,11 @@ db.exec(`
     FOREIGN KEY (game_id) REFERENCES game_config(id)
   );
 
+  CREATE TABLE IF NOT EXISTS server_settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL DEFAULT ''
+  );
+
   CREATE TABLE IF NOT EXISTS api_keys (
     id         INTEGER PRIMARY KEY,
     user_id    INTEGER NOT NULL,

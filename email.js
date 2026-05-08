@@ -1,30 +1,42 @@
 import nodemailer from 'nodemailer';
 
-// ── Transport setup ───────────────────────────────────────────────────────────
-const mailer = (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS)
-  ? nodemailer.createTransport({
-      host:   process.env.SMTP_HOST,
-      port:   +(process.env.SMTP_PORT || 587),
-      secure: +(process.env.SMTP_PORT || 587) === 465,
-      auth:   { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-    })
-  : null;
+// ── Mutable transport — reconfigured at runtime via configureMailer() ─────────
+let _mailer  = null;
+let _from    = 'StockArena <noreply@stockarena.local>';
+let _baseUrl = 'http://localhost:8081';
 
-const FROM     = process.env.EMAIL_FROM || 'StockArena <noreply@stockarena.local>';
-const BASE_URL = (process.env.BASE_URL  || 'http://localhost:8081').replace(/\/$/, '');
+/** Call at startup (and after admin saves settings) to (re)init the transporter. */
+export async function configureMailer({ host, port, user, pass, from, baseUrl } = {}) {
+  if (from)    _from    = from;
+  if (baseUrl) _baseUrl = baseUrl.replace(/\/$/, '');
 
-export const emailEnabled = !!mailer;
-
-if (mailer) {
-  mailer.verify()
-    .then(() => console.log('  ✉  Email relay connected and ready'))
-    .catch(err => console.warn('  ⚠  Email relay unreachable:', err.message));
+  if (host && user && pass) {
+    _mailer = nodemailer.createTransport({
+      host,
+      port:   +(port || 587),
+      secure: +(port || 587) === 465,
+      auth:   { user, pass },
+    });
+    try {
+      await _mailer.verify();
+      console.log('  ✉  Email relay connected and ready');
+      return { ok: true };
+    } catch (err) {
+      console.warn('  ⚠  Email relay unreachable:', err.message);
+      _mailer = null;
+      return { ok: false, error: err.message };
+    }
+  }
+  _mailer = null;
+  return { ok: false, error: 'SMTP not configured' };
 }
 
+export function isEmailEnabled() { return !!_mailer; }
+
 export async function sendEmail(to, subject, html) {
-  if (!mailer || !to || to.endsWith('@local')) return false;
+  if (!_mailer || !to || to.endsWith('@local')) return false;
   try {
-    await mailer.sendMail({ from: FROM, to, subject, html });
+    await _mailer.sendMail({ from: _from, to, subject, html });
     console.log(`[Email] Sent "${subject}" → ${to}`);
     return true;
   } catch (err) {
@@ -34,7 +46,10 @@ export async function sendEmail(to, subject, html) {
 }
 
 // ── Shared layout ─────────────────────────────────────────────────────────────
+function getBaseUrl() { return _baseUrl; }
+
 function layout(title, body) {
+  const BASE_URL = _baseUrl;
   return `<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title></head>
