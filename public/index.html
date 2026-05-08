@@ -286,7 +286,8 @@
       <button class="nav-btn" data-view="leaderboard" onclick="App.navigate('leaderboard')" style="display:none" id="nav-leaderboard">Leaderboard</button>
       <button class="nav-btn" data-view="history"   onclick="App.navigate('history')"   style="display:none" id="nav-history">History</button>
       <button class="nav-btn" data-view="admin"     onclick="App.navigate('admin')"     style="display:none" id="nav-admin">⚙ Admin</button>
-      <button class="nav-btn" data-view="apikeys"   onclick="App.navigate('apikeys')"   style="display:none" id="nav-apikeys">🤖 API</button>
+      <button class="nav-btn" data-view="apikeys"       onclick="App.navigate('apikeys')"       style="display:none" id="nav-apikeys">🤖 API</button>
+      <button class="nav-btn" data-view="notifications" onclick="App.navigate('notifications')" style="display:none" id="nav-notifications">🔔 Alerts</button>
     </div>
     <div class="nav-user">
       <span class="nav-username" id="nav-username"></span>
@@ -664,6 +665,89 @@
       <div class="card"><div class="table-wrap"><table><thead><tr><th>Username</th><th>Role</th><th>Status</th><th>Joined</th><th></th></tr></thead><tbody id="admin-players-body"></tbody></table></div></div>
     </div>
 
+    <!-- ── NOTIFICATIONS ─────────────────────────────────────────────────────── -->
+    <div id="view-notifications" class="view">
+      <div class="section-title">🔔 Email Alerts</div>
+
+      <!-- Email address -->
+      <div class="card" style="max-width:500px;margin-bottom:16px">
+        <div style="font-size:13px;font-weight:700;margin-bottom:12px">Email Address</div>
+        <div class="form-group">
+          <label for="notif-email">Your Email</label>
+          <input id="notif-email" type="email" placeholder="you@example.com" autocomplete="email">
+          <div class="shares-hint">Used only for notifications — never shared.</div>
+        </div>
+        <div id="notif-email-status" style="font-size:12px;margin-bottom:10px"></div>
+      </div>
+
+      <!-- Notification toggles -->
+      <div class="card" style="max-width:500px;margin-bottom:16px">
+        <div style="font-size:13px;font-weight:700;margin-bottom:14px">Notification Preferences</div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px">
+            <div>
+              <div style="font-size:13px;font-weight:600">📈 Trade Confirmations</div>
+              <div style="font-size:12px;color:var(--muted);margin-top:2px">Email when a buy or sell order fills (immediate and queued orders).</div>
+            </div>
+            <input type="checkbox" id="notif-trades" style="width:18px;height:18px;accent-color:var(--blue);flex-shrink:0;margin-top:2px">
+          </div>
+          <hr class="sep" style="margin:0">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px">
+            <div>
+              <div style="font-size:13px;font-weight:600">📊 Daily Portfolio Summary</div>
+              <div style="font-size:12px;color:var(--muted);margin-top:2px">End-of-day email (4:15 PM ET, weekdays) with your holdings, P&amp;L, and rank.</div>
+            </div>
+            <input type="checkbox" id="notif-daily" style="width:18px;height:18px;accent-color:var(--blue);flex-shrink:0;margin-top:2px">
+          </div>
+          <hr class="sep" style="margin:0">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px">
+            <div>
+              <div style="font-size:13px;font-weight:600">🏆 Daily Ranking Update</div>
+              <div style="font-size:12px;color:var(--muted);margin-top:2px">End-of-day email with your rank across all active games (skipped if Daily Summary is on).</div>
+            </div>
+            <input type="checkbox" id="notif-ranking" style="width:18px;height:18px;accent-color:var(--blue);flex-shrink:0;margin-top:2px">
+          </div>
+        </div>
+        <div id="notif-error" class="error-msg" style="margin-top:10px"></div>
+        <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+          <button class="btn btn-primary" onclick="App.saveNotifPrefs()">Save Preferences</button>
+          <button class="btn btn-ghost" onclick="App.sendTestEmail()" id="notif-test-btn">Send Test Email</button>
+        </div>
+      </div>
+
+      <!-- Setup guide -->
+      <details class="card" style="max-width:500px">
+        <summary style="cursor:pointer;font-weight:700;font-size:13px;list-style:none;display:flex;align-items:center;gap:8px">
+          <span>⚙</span> How to enable email sending (admin setup)
+        </summary>
+        <div style="margin-top:14px;font-size:13px;color:var(--muted);line-height:1.8">
+          <p style="margin-bottom:10px">StockArena sends email via any SMTP relay. We recommend <strong style="color:var(--text)">Brevo</strong> (free tier: 300 emails/day, no credit card required).</p>
+
+          <div style="background:var(--bg3);border-radius:6px;padding:12px 14px;margin-bottom:12px">
+            <div style="font-weight:700;color:var(--text);margin-bottom:6px">1. Create a free Brevo account</div>
+            Visit <strong>brevo.com</strong> → sign up free → go to <em>Settings → SMTP &amp; API → SMTP</em> and note your credentials.
+          </div>
+
+          <div style="background:var(--bg3);border-radius:6px;padding:12px 14px;margin-bottom:12px">
+            <div style="font-weight:700;color:var(--text);margin-bottom:6px">2. Add these lines to your <code style="background:var(--bg2);padding:1px 4px;border-radius:3px">.env</code> file on the Pi</div>
+            <pre style="font-size:11px;color:var(--green);margin:0;white-space:pre-wrap">SMTP_HOST=smtp-relay.brevo.com
+SMTP_PORT=587
+SMTP_USER=your-brevo-login@email.com
+SMTP_PASS=your-brevo-smtp-key
+EMAIL_FROM=StockArena &lt;noreply@yourdomain.com&gt;
+BASE_URL=http://your-pi-ip:8081</pre>
+          </div>
+
+          <div style="background:var(--bg3);border-radius:6px;padding:12px 14px">
+            <div style="font-weight:700;color:var(--text);margin-bottom:6px">3. Restart the service &amp; test</div>
+            Run <code style="background:var(--bg2);padding:1px 4px;border-radius:3px">sudo systemctl restart stockarena</code>, then use the <strong>Send Test Email</strong> button above to confirm it's working.
+          </div>
+
+          <p style="margin-top:12px;font-size:12px">Other SMTP services that work: <strong>SendGrid</strong> (100/day free), <strong>Mailgun</strong>, <strong>SMTP2GO</strong> (1,000/month free). Same env var format applies.</p>
+        </div>
+      </details>
+    </div>
+
     <!-- ── API KEYS ──────────────────────────────────────────────────────────── -->
     <div id="view-apikeys" class="view">
       <div class="section-title">🤖 AI Agent API Keys</div>
@@ -971,7 +1055,8 @@ const App = (() => {
     if (view==='leaderboard') { loadLeaderboard(); }
     if (view==='history')     { loadHistory(); }
     if (view==='admin')       { loadAdmin(); }
-    if (view==='apikeys')     { loadApiKeys(); }
+    if (view==='apikeys')        { loadApiKeys(); }
+    if (view==='notifications')  { loadNotifPrefs(); }
   }
 
   function enterGame(game) {
@@ -1032,6 +1117,7 @@ const App = (() => {
     document.getElementById('pending-shell').style.display='none';
     document.getElementById('auth-shell').style.display='flex';
     document.getElementById('nav-apikeys').style.display='none';
+    document.getElementById('nav-notifications').style.display='none';
     switchAuthTab('login');
   }
 
@@ -1048,6 +1134,7 @@ const App = (() => {
     document.getElementById('nav-username').textContent=user.username;
     if (user.is_admin) { document.getElementById('nav-admin').style.display=''; document.getElementById('nav-admin-badge').style.display=''; }
     document.getElementById('nav-apikeys').style.display='';
+    document.getElementById('nav-notifications').style.display='';
     navigate('games');
   }
 
@@ -2126,6 +2213,49 @@ const App = (() => {
     }
   }
 
+  // ── Notification preferences ───────────────────────────────────────────────
+  async function loadNotifPrefs() {
+    try {
+      const p = await api('GET', '/api/user/profile');
+      document.getElementById('notif-email').value    = (p.email_set ? p.email : '');
+      document.getElementById('notif-trades').checked  = !!p.notify_trades;
+      document.getElementById('notif-daily').checked   = !!p.notify_daily;
+      document.getElementById('notif-ranking').checked = !!p.notify_ranking;
+      const statusEl = document.getElementById('notif-email-status');
+      if (p.email_set) {
+        statusEl.innerHTML = `<span class="green">✓ Email saved: ${esc(p.email)}</span>`;
+      } else {
+        statusEl.innerHTML = '<span class="muted">No email set — add one above to receive alerts.</span>';
+      }
+    } catch(err) { console.error(err); }
+  }
+
+  async function saveNotifPrefs() {
+    const email    = document.getElementById('notif-email').value.trim();
+    const errEl    = document.getElementById('notif-error');
+    errEl.textContent = '';
+    try {
+      await api('PUT', '/api/user/profile', {
+        email:          email || undefined,
+        notify_trades:  document.getElementById('notif-trades').checked,
+        notify_daily:   document.getElementById('notif-daily').checked,
+        notify_ranking: document.getElementById('notif-ranking').checked,
+      });
+      toast('Notification preferences saved!', 'success');
+      loadNotifPrefs();
+    } catch(err) { errEl.textContent = err.message; }
+  }
+
+  async function sendTestEmail() {
+    const btn = document.getElementById('notif-test-btn');
+    btn.disabled = true; btn.textContent = '…';
+    try {
+      const r = await api('POST', '/api/user/profile/test-email');
+      toast(r.message, 'success');
+    } catch(err) { toast(err.message, 'error'); }
+    finally { btn.disabled = false; btn.textContent = 'Send Test Email'; }
+  }
+
   // ── API Keys ───────────────────────────────────────────────────────────────
   async function loadApiKeys() {
     // Show current game ID hint in the reference section
@@ -2218,6 +2348,7 @@ const App = (() => {
     openCloseFuturesModal, closeCloseFuturesModal, updateCfmTotal, setCfmMax, executeClosePosition,
     editGame, resetAdminForm, saveGameConfig,
     approveUser, revokeUser, deletePendingUser,
+    saveNotifPrefs, sendTestEmail,
     generateApiKey, copyApiKey, revokeApiKey,
     openDeleteModal, closeDeleteModal, confirmDeleteGame,
   };

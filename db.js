@@ -149,6 +149,9 @@ const migrations = [
   "ALTER TABLE users          ADD COLUMN is_approved      INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE game_config    ADD COLUMN is_private       INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE game_config    ADD COLUMN join_password    TEXT",
+  "ALTER TABLE users          ADD COLUMN notify_trades    INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE users          ADD COLUMN notify_daily     INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE users          ADD COLUMN notify_ranking   INTEGER NOT NULL DEFAULT 0",
 ];
 for (const sql of migrations) { try { db.exec(sql); } catch {} }
 

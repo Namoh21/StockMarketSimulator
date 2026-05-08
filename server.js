@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import db from './db.js';
+import { emailEnabled, sendEmail, buildTradeEmail, buildDailySummaryEmail, buildRankingEmail, buildTestEmail } from './email.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -395,6 +396,54 @@ app.delete('/api/user/api-keys/:keyId', requireAuth, (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// USER PROFILE & NOTIFICATION PREFERENCES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+app.get('/api/user/profile', requireAuth, (req, res) => {
+  const u = db.prepare('SELECT id, username, email, notify_trades, notify_daily, notify_ranking FROM users WHERE id = ?').get(req.user.id);
+  if (!u) return res.status(404).json({ error: 'User not found' });
+  res.json({ ...u, email_set: u.email && !u.email.endsWith('@local') });
+});
+
+app.put('/api/user/profile', requireAuth, (req, res) => {
+  const { email, notify_trades, notify_daily, notify_ranking } = req.body || {};
+  const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  if (email !== undefined) {
+    if (email && !emailRe.test(email))
+      return res.status(400).json({ error: 'Invalid email address' });
+    // Check uniqueness (only if setting a real email, skip @local placeholders)
+    if (email) {
+      const conflict = db.prepare('SELECT id FROM users WHERE email = ? COLLATE NOCASE AND id != ?').get(email.trim(), req.user.id);
+      if (conflict) return res.status(400).json({ error: 'That email is already in use by another account' });
+    }
+  }
+
+  const current = db.prepare('SELECT email, notify_trades, notify_daily, notify_ranking FROM users WHERE id = ?').get(req.user.id);
+  const newEmail = email !== undefined ? (email?.trim() || `${req.user.username}@local`) : current.email;
+
+  db.prepare('UPDATE users SET email = ?, notify_trades = ?, notify_daily = ?, notify_ranking = ? WHERE id = ?').run(
+    newEmail,
+    notify_trades  !== undefined ? (notify_trades  ? 1 : 0) : current.notify_trades,
+    notify_daily   !== undefined ? (notify_daily   ? 1 : 0) : current.notify_daily,
+    notify_ranking !== undefined ? (notify_ranking ? 1 : 0) : current.notify_ranking,
+    req.user.id
+  );
+  res.json({ message: 'Preferences saved.' });
+});
+
+app.post('/api/user/profile/test-email', requireAuth, async (req, res) => {
+  const u = db.prepare('SELECT username, email FROM users WHERE id = ?').get(req.user.id);
+  if (!u?.email || u.email.endsWith('@local'))
+    return res.status(400).json({ error: 'Set a real email address first.' });
+  if (!emailEnabled)
+    return res.status(503).json({ error: 'Email is not configured on this server. Ask your admin to set SMTP env vars.' });
+  const ok = await sendEmail(u.email, 'Test Email — StockArena', buildTestEmail(u.username));
+  ok ? res.json({ message: `Test email sent to ${u.email}` })
+     : res.status(500).json({ error: 'Failed to send — check server SMTP configuration.' });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // GAMES — list, create, get, update (non-destructive)
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -771,8 +820,9 @@ app.post('/api/games/:gameId/orders', requireAuth, loadGame, async (req, res) =>
       if (cost > avail)
         return res.status(400).json({ error: `Insufficient funds — cost $${cost.toFixed(2)}, available $${avail.toFixed(2)}` });
     }
-    applyFill(req.user.id, game.id, symbol, quote.name, type, shares, quote.price);
+    const fillTotal = applyFill(req.user.id, game.id, symbol, quote.name, type, shares, quote.price);
     const updated = db.prepare('SELECT * FROM portfolios WHERE user_id = ? AND game_id = ?').get(req.user.id, game.id);
+    fireTradeNotification(req.user.id, game.id, symbol, quote.name, type, shares, quote.price, fillTotal);
     return res.json({ filled: true, filled_price: quote.price, cash_balance: updated.cash_balance,
       message: `${type === 'buy' ? 'Bought' : 'Sold'} ${shares} share(s) of ${symbol} at $${quote.price.toFixed(2)}` });
   }
@@ -1055,6 +1105,20 @@ app.delete('/api/admin/users/:userId', requireAdmin, (req, res) => {
   res.json({ message: `${target.username} has been deleted.` });
 });
 
+// ── Trade notification helper ─────────────────────────────────────────────────
+async function fireTradeNotification(userId, gameId, symbol, companyName, type, shares, price, total) {
+  try {
+    const u = db.prepare('SELECT username, email, notify_trades FROM users WHERE id = ?').get(userId);
+    if (!u?.notify_trades || !u.email || u.email.endsWith('@local')) return;
+    const g = db.prepare('SELECT title FROM game_config WHERE id = ?').get(gameId);
+    const p = db.prepare('SELECT cash_balance FROM portfolios WHERE user_id = ? AND game_id = ?').get(userId, gameId);
+    await sendEmail(u.email,
+      `Trade Confirmed: ${type.toUpperCase()} ${shares} × ${symbol} — StockArena`,
+      buildTradeEmail({ username: u.username, gameName: g?.title || 'Game', type, symbol, companyName, shares, price, total, cashBalance: p?.cash_balance ?? 0 })
+    );
+  } catch (err) { console.error('[Email] trade notification failed:', err.message); }
+}
+
 // ── Background order processor ────────────────────────────────────────────────
 async function fillOrder(order) {
   const game = db.prepare('SELECT * FROM game_config WHERE id = ?').get(order.game_id);
@@ -1088,6 +1152,7 @@ async function fillOrder(order) {
   db.prepare("UPDATE pending_orders SET status='filled', filled_at=datetime('now'), filled_price=?, filled_total=? WHERE id=?")
     .run(price, total, order.id);
   console.log(`[Orders] Filled ${order.type} #${order.id}: ${order.shares} ${order.symbol} @ $${price.toFixed(2)}`);
+  fireTradeNotification(order.user_id, order.game_id, order.symbol, order.company_name, order.type, order.shares, price, total);
 }
 
 async function processAllPendingOrders() {
@@ -1112,9 +1177,104 @@ async function processAllPendingOrders() {
   }
 }
 
+// ── Daily email scheduler ─────────────────────────────────────────────────────
+let lastDailyEmailDate = '';
+
+async function sendDailyEmails() {
+  if (!emailEnabled) return;
+  const users = db.prepare(
+    'SELECT id, username, email, notify_daily, notify_ranking FROM users WHERE is_approved = 1 AND (notify_daily = 1 OR notify_ranking = 1)'
+  ).all();
+  if (!users.length) return;
+  console.log(`[Email] Sending daily summaries to ${users.length} user(s)…`);
+
+  const today = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+  for (const u of users) {
+    if (!u.email || u.email.endsWith('@local')) continue;
+    try {
+      // Gather all active games this user is enrolled in
+      const portfolios = db.prepare(
+        `SELECT p.*, g.title, g.starting_cash, g.allow_futures FROM portfolios p
+         JOIN game_config g ON p.game_id = g.id
+         WHERE p.user_id = ? AND g.is_active = 1`
+      ).all(u.id);
+
+      if (!portfolios.length) continue;
+
+      const gameData = [];
+      for (const p of portfolios) {
+        const holdings = db.prepare('SELECT * FROM holdings WHERE user_id = ? AND game_id = ? AND shares > 0').all(u.id, p.game_id);
+        const enriched = await Promise.all(holdings.map(async h => {
+          try { const q = await getQuote(h.symbol); return { ...h, current_price: q.price }; }
+          catch { return { ...h, current_price: h.avg_cost }; }
+        }));
+        const stockValue = enriched.reduce((s, h) => s + h.shares * h.current_price, 0);
+
+        let futuresPnl = 0;
+        if (p.allow_futures) {
+          const fps = db.prepare('SELECT * FROM futures_positions WHERE user_id = ? AND game_id = ? AND contracts > 0').all(u.id, p.game_id);
+          for (const f of fps) {
+            try { const q = await getQuote(f.symbol); futuresPnl += (f.direction === 'long' ? (q.price - f.entry_price) : (f.entry_price - q.price)) * f.contracts; }
+            catch {}
+          }
+        }
+
+        const totalValue = p.cash_balance + stockValue + futuresPnl;
+
+        // Leaderboard rank
+        const allPortfolios = db.prepare('SELECT p2.user_id, p2.cash_balance FROM portfolios p2 WHERE p2.game_id = ?').all(p.game_id);
+        const allHoldings   = db.prepare('SELECT * FROM holdings WHERE game_id = ? AND shares > 0').all(p.game_id);
+        const priceCache2   = {};
+        for (const h of allHoldings) {
+          if (!priceCache2[h.symbol]) try { priceCache2[h.symbol] = (await getQuote(h.symbol)).price; } catch {}
+        }
+        const ranked = allPortfolios.map(ap => {
+          const sv = allHoldings.filter(h => h.user_id === ap.user_id).reduce((s, h) => s + h.shares * (priceCache2[h.symbol] ?? h.avg_cost), 0);
+          return { user_id: ap.user_id, total: ap.cash_balance + sv };
+        }).sort((a, b) => b.total - a.total);
+        const rank = ranked.findIndex(r => r.user_id === u.id) + 1;
+
+        gameData.push({ gameName: p.title, totalValue, startingCash: p.starting_cash, cashBalance: p.cash_balance, stockValue, futuresPnl, rank, totalPlayers: ranked.length, holdings: enriched });
+      }
+
+      if (!gameData.length) continue;
+
+      if (u.notify_daily) {
+        await sendEmail(u.email, `Daily Summary — ${today} — StockArena`, buildDailySummaryEmail({ username: u.username, date: today, games: gameData }));
+      } else if (u.notify_ranking) {
+        // Ranking-only: send a brief ranking email for each game
+        for (const g of gameData) {
+          const gain = g.totalValue - g.startingCash;
+          await sendEmail(u.email,
+            `You're ranked #${g.rank} in "${g.gameName}" — StockArena`,
+            buildRankingEmail({ username: u.username, gameName: g.gameName, rank: g.rank, totalPlayers: g.totalPlayers, totalValue: g.totalValue, gain, gainPct: (gain / g.startingCash) * 100 })
+          );
+        }
+      }
+    } catch (err) { console.error(`[Email] daily summary for ${u.username} failed:`, err.message); }
+  }
+  console.log('[Email] Daily summaries complete.');
+}
+
+async function maybeRunDailyEmails() {
+  const { weekday, hour, minute } = getEasternParts();
+  if (weekday === 'Sat' || weekday === 'Sun') return;
+  const todayKey = new Date().toISOString().split('T')[0];
+  if (lastDailyEmailDate === todayKey) return;
+  // Fire after 4:15 PM ET (15 min buffer after market close)
+  if (hour * 60 + minute >= 975) {
+    lastDailyEmailDate = todayKey;
+    await sendDailyEmails();
+  }
+}
+
 // Run immediately at startup then every 60 s
 processAllPendingOrders();
-setInterval(processAllPendingOrders, 60_000);
+setInterval(async () => {
+  await processAllPendingOrders();
+  await maybeRunDailyEmails();
+}, 60_000);
 
 // ── Catch-all → SPA ──────────────────────────────────────────────────────────
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
