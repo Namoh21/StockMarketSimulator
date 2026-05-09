@@ -259,6 +259,16 @@ This project is open source and free to use, modify, and self-host. Attribution 
 
 ---
 
+## Support
+
+If you enjoy StockArena, donations are appreciated and help keep the project going!
+
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-donate-yellow?logo=buy-me-a-coffee&logoColor=white)](https://buymeacoffee.com/Namoh21)
+
+👉 **[buymeacoffee.com/Namoh21](https://buymeacoffee.com/Namoh21)**
+
+---
+
 ## Contributing
 
 This is a personal project. Issues and pull requests are welcome but may not be reviewed promptly.
