@@ -1,3 +1,4 @@
+import compression from 'compression';
 import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -126,8 +127,15 @@ function rateLimited(key, maxHits = 10, windowMs = 15 * 60 * 1000) {
 // Clean stale buckets every 30 minutes
 setInterval(() => { const now = Date.now(); for (const [k, b] of _rateBuckets) if (now > b.resetAt) _rateBuckets.delete(k); }, 30 * 60 * 1000);
 
+app.use(compression()); // gzip all responses — biggest perf win on a Pi
 app.use(express.json({ limit: '50kb' })); // prevent oversized payload DoS
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), {
+  maxAge: '1h',           // browsers cache static assets
+  setHeaders(res, p) {
+    // Never cache index.html so users always get the latest version
+    if (p.endsWith('index.html')) res.setHeader('Cache-Control', 'no-cache');
+  },
+}));
 
 // ── Yahoo Finance direct API ──────────────────────────────────────────────────
 const YF_HEADERS = {
@@ -209,7 +217,7 @@ async function yfChart(symbol, period1) {
 
 // ── Price cache (5-min TTL) ──────────────────────────────────────────────────
 const priceCache = new Map();
-const CACHE_TTL  = 60 * 1000; // 60-second price cache — fresh enough for active trading
+const CACHE_TTL  = 2 * 60 * 1000; // 2-min price cache — balances freshness vs Yahoo API load
 
 async function getQuote(symbol) {
   const sym = symbol.toUpperCase();
@@ -772,30 +780,31 @@ app.get('/api/games/:gameId/portfolio', requireAuth, loadGame, async (req, res) 
   const portfolio = db.prepare('SELECT * FROM portfolios WHERE user_id = ? AND game_id = ?').get(req.user.id, game.id);
   if (!portfolio) return res.status(404).json({ error: 'not_joined' });
 
-  const holdings = db.prepare('SELECT * FROM holdings WHERE user_id = ? AND game_id = ? AND shares > 0').all(req.user.id, game.id);
-  const enriched = await Promise.all(holdings.map(async h => {
-    try {
-      const q = await getQuote(h.symbol);
-      return { ...h, current_price: q.price, change: q.change, change_percent: q.changePercent,
-        market_value: h.shares * q.price, gain_loss: (q.price - h.avg_cost) * h.shares,
-        gain_loss_pct: ((q.price - h.avg_cost) / h.avg_cost) * 100 };
-    } catch {
-      return { ...h, current_price: h.avg_cost, change: 0, change_percent: 0,
-        market_value: h.shares * h.avg_cost, gain_loss: 0, gain_loss_pct: 0 };
-    }
-  }));
-
+  const holdings        = db.prepare('SELECT * FROM holdings WHERE user_id = ? AND game_id = ? AND shares > 0').all(req.user.id, game.id);
   const futuresPositions = game.allow_futures
     ? db.prepare('SELECT * FROM futures_positions WHERE user_id = ? AND game_id = ? AND contracts > 0').all(req.user.id, game.id) : [];
-  const enrichedFutures = await Promise.all(futuresPositions.map(async f => {
-    try {
-      const q = await getQuote(f.symbol);
-      const unrealized = (f.direction === 'long' ? (q.price - f.entry_price) : (f.entry_price - q.price)) * f.contracts;
-      return { ...f, current_price: q.price, change: q.change, unrealized_pnl: unrealized };
-    } catch {
-      return { ...f, current_price: f.entry_price, change: 0, unrealized_pnl: 0 };
-    }
+
+  // Fetch all prices in one parallel batch (holdings + futures together)
+  const allSymbols = [...new Set([...holdings.map(h => h.symbol), ...futuresPositions.map(f => f.symbol)])];
+  const prices = {};
+  await Promise.allSettled(allSymbols.map(async sym => {
+    try { prices[sym] = await getQuote(sym); } catch {}
   }));
+
+  const enriched = holdings.map(h => {
+    const q = prices[h.symbol];
+    if (!q) return { ...h, current_price: h.avg_cost, change: 0, change_percent: 0, market_value: h.shares * h.avg_cost, gain_loss: 0, gain_loss_pct: 0 };
+    return { ...h, current_price: q.price, change: q.change, change_percent: q.changePercent,
+      market_value: h.shares * q.price, gain_loss: (q.price - h.avg_cost) * h.shares,
+      gain_loss_pct: ((q.price - h.avg_cost) / h.avg_cost) * 100 };
+  });
+
+  const enrichedFutures = futuresPositions.map(f => {
+    const q = prices[f.symbol];
+    if (!q) return { ...f, current_price: f.entry_price, change: 0, unrealized_pnl: 0 };
+    const unrealized = (f.direction === 'long' ? (q.price - f.entry_price) : (f.entry_price - q.price)) * f.contracts;
+    return { ...f, current_price: q.price, change: q.change, unrealized_pnl: unrealized };
+  });
 
   const stockValue    = enriched.reduce((s, h) => s + h.market_value, 0);
   const futuresPnl    = enrichedFutures.reduce((s, f) => s + f.unrealized_pnl, 0);
@@ -1272,15 +1281,17 @@ async function fireTradeNotification(userId, gameId, symbol, companyName, type, 
 }
 
 // ── Background order processor ────────────────────────────────────────────────
-async function fillOrder(order) {
+async function fillOrder(order, cachedPrice = null) {
   const game = db.prepare('SELECT * FROM game_config WHERE id = ?').get(order.game_id);
   if (!game || gameStatus(game) !== 'active') {
     db.prepare("UPDATE pending_orders SET status='rejected', reject_reason='Game is no longer active', filled_at=datetime('now') WHERE id=?").run(order.id);
     return;
   }
-  let price;
-  try { price = (await getQuote(order.symbol)).price; }
-  catch (err) { return; } // price unavailable — try next cycle
+  let price = cachedPrice;
+  if (price == null) {
+    try { price = (await getQuote(order.symbol)).price; }
+    catch { return; } // price unavailable — try next cycle
+  }
 
   const total = +(price * order.shares).toFixed(6);
 
@@ -1311,17 +1322,25 @@ async function processAllPendingOrders() {
   const pending = db.prepare("SELECT * FROM pending_orders WHERE status='pending' ORDER BY submitted_at").all();
   if (!pending.length) return;
   const open = isMarketOpen();
+
+  // Batch-fetch all unique symbols needed this cycle — avoids N sequential YF calls
+  const neededSymbols = [...new Set(pending.map(o => o.symbol))];
+  const batchPrices = {};
+  await Promise.allSettled(neededSymbols.map(async sym => {
+    try { batchPrices[sym] = (await getQuote(sym)).price; } catch {}
+  }));
+
   for (const order of pending) {
     try {
       if (order.order_type === 'market') {
-        if (open) await fillOrder(order);
+        if (open) await fillOrder(order, batchPrices[order.symbol]);
       } else {
         // Limit orders: check price condition (triggers at any hour for game realism)
-        let price;
-        try { price = (await getQuote(order.symbol)).price; } catch { continue; }
+        const price = batchPrices[order.symbol];
+        if (price == null) continue;
         const triggered = order.type === 'buy'  ? price <= order.limit_price
                         : order.type === 'sell' ? price >= order.limit_price : false;
-        if (triggered) await fillOrder(order);
+        if (triggered) await fillOrder(order, price);
       }
     } catch (err) {
       console.error(`[Orders] Error on order ${order.id}:`, err.message);
@@ -1336,72 +1355,66 @@ async function sendDailyEmails() {
   if (!isEmailEnabled()) return;
   const users = db.prepare(
     'SELECT id, username, email, notify_daily, notify_ranking FROM users WHERE is_approved = 1 AND (notify_daily = 1 OR notify_ranking = 1)'
-  ).all();
+  ).all().filter(u => u.email && !u.email.endsWith('@local'));
   if (!users.length) return;
   console.log(`[Email] Sending daily summaries to ${users.length} user(s)…`);
-
   const today = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
-  for (const u of users) {
-    if (!u.email || u.email.endsWith('@local')) continue;
-    try {
-      // Gather all active games this user is enrolled in
-      const portfolios = db.prepare(
-        `SELECT p.*, g.title, g.starting_cash, g.allow_futures FROM portfolios p
-         JOIN game_config g ON p.game_id = g.id
-         WHERE p.user_id = ? AND g.is_active = 1`
-      ).all(u.id);
+  // ── Pre-compute per-game leaderboard and prices ONCE for all users ───────────
+  const activeGames = db.prepare('SELECT * FROM game_config WHERE is_active = 1').all();
+  const gameCache = {}; // gameId → { priceMap, ranked }
 
+  await Promise.allSettled(activeGames.map(async game => {
+    const allHoldings = db.prepare('SELECT * FROM holdings WHERE game_id = ? AND shares > 0').all(game.id);
+    const allFutures  = game.allow_futures
+      ? db.prepare('SELECT * FROM futures_positions WHERE game_id = ? AND contracts > 0').all(game.id) : [];
+    const symbols = [...new Set([...allHoldings.map(h => h.symbol), ...allFutures.map(f => f.symbol)])];
+
+    const priceMap = {};
+    await Promise.allSettled(symbols.map(async sym => {
+      try { priceMap[sym] = (await getQuote(sym)).price; } catch {}
+    }));
+
+    const allPortfolios = db.prepare('SELECT user_id, cash_balance FROM portfolios WHERE game_id = ?').all(game.id);
+    const ranked = allPortfolios.map(ap => {
+      const sv = allHoldings.filter(h => h.user_id === ap.user_id)
+        .reduce((s, h) => s + h.shares * (priceMap[h.symbol] ?? h.avg_cost), 0);
+      const fp = allFutures.filter(f => f.user_id === ap.user_id)
+        .reduce((s, f) => s + (f.direction === 'long' ? (priceMap[f.symbol] ?? f.entry_price) - f.entry_price : f.entry_price - (priceMap[f.symbol] ?? f.entry_price)) * f.contracts, 0);
+      return { user_id: ap.user_id, total: ap.cash_balance + sv + fp };
+    }).sort((a, b) => b.total - a.total);
+
+    gameCache[game.id] = { game, priceMap, ranked, allHoldings };
+  }));
+
+  // ── Send each user's email using cached data ──────────────────────────────────
+  for (const u of users) {
+    try {
+      const portfolios = db.prepare(
+        'SELECT p.*, g.title, g.starting_cash, g.allow_futures FROM portfolios p JOIN game_config g ON p.game_id = g.id WHERE p.user_id = ? AND g.is_active = 1'
+      ).all(u.id);
       if (!portfolios.length) continue;
 
-      const gameData = [];
-      for (const p of portfolios) {
-        const holdings = db.prepare('SELECT * FROM holdings WHERE user_id = ? AND game_id = ? AND shares > 0').all(u.id, p.game_id);
-        const enriched = await Promise.all(holdings.map(async h => {
-          try { const q = await getQuote(h.symbol); return { ...h, current_price: q.price }; }
-          catch { return { ...h, current_price: h.avg_cost }; }
-        }));
-        const stockValue = enriched.reduce((s, h) => s + h.shares * h.current_price, 0);
-
-        let futuresPnl = 0;
-        if (p.allow_futures) {
-          const fps = db.prepare('SELECT * FROM futures_positions WHERE user_id = ? AND game_id = ? AND contracts > 0').all(u.id, p.game_id);
-          for (const f of fps) {
-            try { const q = await getQuote(f.symbol); futuresPnl += (f.direction === 'long' ? (q.price - f.entry_price) : (f.entry_price - q.price)) * f.contracts; }
-            catch {}
-          }
-        }
-
-        const totalValue = p.cash_balance + stockValue + futuresPnl;
-
-        // Leaderboard rank
-        const allPortfolios = db.prepare('SELECT p2.user_id, p2.cash_balance FROM portfolios p2 WHERE p2.game_id = ?').all(p.game_id);
-        const allHoldings   = db.prepare('SELECT * FROM holdings WHERE game_id = ? AND shares > 0').all(p.game_id);
-        const priceCache2   = {};
-        for (const h of allHoldings) {
-          if (!priceCache2[h.symbol]) try { priceCache2[h.symbol] = (await getQuote(h.symbol)).price; } catch {}
-        }
-        const ranked = allPortfolios.map(ap => {
-          const sv = allHoldings.filter(h => h.user_id === ap.user_id).reduce((s, h) => s + h.shares * (priceCache2[h.symbol] ?? h.avg_cost), 0);
-          return { user_id: ap.user_id, total: ap.cash_balance + sv };
-        }).sort((a, b) => b.total - a.total);
-        const rank = ranked.findIndex(r => r.user_id === u.id) + 1;
-
-        gameData.push({ gameName: p.title, totalValue, startingCash: p.starting_cash, cashBalance: p.cash_balance, stockValue, futuresPnl, rank, totalPlayers: ranked.length, holdings: enriched });
-      }
+      const gameData = portfolios.map(p => {
+        const cached = gameCache[p.game_id];
+        if (!cached) return null;
+        const { priceMap, ranked, allHoldings } = cached;
+        const userHoldings = allHoldings.filter(h => h.user_id === u.id).map(h => ({ ...h, current_price: priceMap[h.symbol] ?? h.avg_cost }));
+        const stockValue   = userHoldings.reduce((s, h) => s + h.shares * h.current_price, 0);
+        const rank = (ranked.findIndex(r => r.user_id === u.id) + 1) || ranked.length + 1;
+        const totalValue = p.cash_balance + stockValue;
+        return { gameName: p.title, totalValue, startingCash: p.starting_cash, cashBalance: p.cash_balance, stockValue, futuresPnl: 0, rank, totalPlayers: ranked.length, holdings: userHoldings };
+      }).filter(Boolean);
 
       if (!gameData.length) continue;
 
       if (u.notify_daily) {
         await sendEmail(u.email, `Daily Summary — ${today} — StockArena`, buildDailySummaryEmail({ username: u.username, date: today, games: gameData }));
       } else if (u.notify_ranking) {
-        // Ranking-only: send a brief ranking email for each game
         for (const g of gameData) {
           const gain = g.totalValue - g.startingCash;
-          await sendEmail(u.email,
-            `You're ranked #${g.rank} in "${g.gameName}" — StockArena`,
-            buildRankingEmail({ username: u.username, gameName: g.gameName, rank: g.rank, totalPlayers: g.totalPlayers, totalValue: g.totalValue, gain, gainPct: (gain / g.startingCash) * 100 })
-          );
+          await sendEmail(u.email, `You're ranked #${g.rank} in "${g.gameName}" — StockArena`,
+            buildRankingEmail({ username: u.username, gameName: g.gameName, rank: g.rank, totalPlayers: g.totalPlayers, totalValue: g.totalValue, gain, gainPct: (gain / g.startingCash) * 100 }));
         }
       }
     } catch (err) { console.error(`[Email] daily summary for ${u.username} failed:`, err.message); }

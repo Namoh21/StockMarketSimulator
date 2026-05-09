@@ -218,6 +218,7 @@
     @keyframes spin{to{transform:rotate(360deg);}}
     .live-dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--green); margin-right:4px; animation:pulse 2s ease-in-out infinite; vertical-align:middle; }
     @keyframes pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.4;transform:scale(.8);}}
+    @keyframes shimmer{0%{opacity:.5;}50%{opacity:1;}100%{opacity:.5;}}
     .empty { text-align:center; padding:44px 20px; color:var(--muted); }
     .empty-icon { font-size:36px; margin-bottom:10px; }
     .error-msg { color:var(--red); font-size:12px; margin-top:7px; }
@@ -353,7 +354,7 @@
         <div>
           <div class="search-wrap">
             <span class="search-icon">🔍</span>
-            <input id="stock-search" type="text" placeholder="Search by symbol or company name…" autocomplete="off" oninput="App.onSearchInput(this.value)" onfocus="App.onSearchFocus()">
+            <input id="stock-search" type="text" placeholder="Search by symbol or company name…" autocomplete="off" oninput="App.onSearchInput(this.value)" onfocus="App.onSearchFocus()" onkeydown="App.onSearchKeydown(event)">
             <div id="search-dropdown"></div>
           </div>
           <div id="quote-card" class="card">
@@ -999,6 +1000,7 @@ const App = (() => {
   let token = localStorage.getItem('sa_token');
   let user  = null;
   let currentGameId   = null;
+  const _scrollPos    = {}; // preserve scroll per view
   let currentGame     = null;
   let portfolio       = null;
   let currentSymbol   = null;
@@ -1023,12 +1025,21 @@ const App = (() => {
     return d;
   }
 
-  // ── Toast ──────────────────────────────────────────────────────────────────
-  let toastT;
+  // ── Toast queue (prevents overlapping notifications) ──────────────────────
+  const _toastQueue = [];
+  let _toastBusy = false;
   function toast(msg, type = 'info') {
+    _toastQueue.push({ msg, type });
+    if (!_toastBusy) _drainToast();
+  }
+  function _drainToast() {
+    if (!_toastQueue.length) { _toastBusy = false; return; }
+    _toastBusy = true;
+    const { msg, type } = _toastQueue.shift();
     const el = document.getElementById('toast');
     el.textContent = msg; el.className = `show ${type}`;
-    clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('show'), type === 'error' ? 6000 : 4500);
+    const dur = type === 'error' ? 6000 : 4500;
+    setTimeout(() => { el.classList.remove('show'); setTimeout(_drainToast, 400); }, dur);
   }
 
   // ── Format helpers ─────────────────────────────────────────────────────────
@@ -1070,7 +1081,13 @@ const App = (() => {
   }
 
   // ── Navigation ─────────────────────────────────────────────────────────────
+  let _currentView = 'games';
+  let _marketStatusInterval = null;
   function navigate(view) {
+    // Save scroll position of current view before switching
+    _scrollPos[_currentView] = window.scrollY;
+    _currentView = view;
+
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
     const el = document.getElementById(`view-${view}`);
     if (el) el.classList.add('active');
@@ -1078,10 +1095,14 @@ const App = (() => {
     clearInterval(refreshTimer);
     if (view !== 'portfolio') { clearInterval(countdownTimer); const l=document.getElementById('dash-live'); if(l) l.style.display='none'; }
     if (view !== 'futures') clearInterval(futuresRefreshTimer);
+    clearInterval(_marketStatusInterval);
     if (view==='games')       { loadGames(); }
     if (view==='portfolio')   { loadPortfolio(); refreshTimer=setInterval(loadPortfolio,30000); }
-    if (view==='trade')       { loadTrade(); }
+    if (view==='trade')       { loadTrade(); _marketStatusInterval=setInterval(refreshMarketStatus,60000); }
     if (view==='futures')     { loadFutures(); }
+
+    // Restore scroll position after DOM settles
+    requestAnimationFrame(() => window.scrollTo(0, _scrollPos[view] || 0));
     if (view==='leaderboard') { loadLeaderboard(); }
     if (view==='history')     { loadHistory(); }
     if (view==='admin')       { loadAdmin(); loadSmtpSettings(); }
@@ -1134,8 +1155,12 @@ const App = (() => {
 
   async function register() {
     document.getElementById('reg-error').textContent = '';
+    const username = document.getElementById('reg-username').value.trim();
+    const password = document.getElementById('reg-password').value;
+    if (!username) { document.getElementById('reg-error').textContent = 'Username is required.'; return; }
+    if (password.length < 6) { document.getElementById('reg-error').textContent = 'Password must be at least 6 characters.'; return; }
     try {
-      const d = await api('POST','/api/auth/register',{ username:document.getElementById('reg-username').value.trim(), password:document.getElementById('reg-password').value });
+      const d = await api('POST','/api/auth/register',{ username, password });
       token=d.token; user=d.user; localStorage.setItem('sa_token',token); showApp();
     } catch(err) { document.getElementById('reg-error').textContent=err.message; }
   }
@@ -1254,6 +1279,12 @@ const App = (() => {
     }
   }
 
+  // ── Skeleton loading state for stats cards ────────────────────────────────
+  const SKELETON_CARD = `<div class="card" style="animation:pulse 1.4s ease-in-out infinite">
+    <div style="height:11px;background:var(--bg3);border-radius:4px;width:60%;margin-bottom:10px"></div>
+    <div style="height:26px;background:var(--bg3);border-radius:4px;width:80%"></div>
+  </div>`;
+
   // ── Portfolio countdown ────────────────────────────────────────────────────
   let countdownTimer = null;
   function startCountdown(seconds) {
@@ -1274,6 +1305,9 @@ const App = (() => {
   // ── Portfolio ──────────────────────────────────────────────────────────────
   async function loadPortfolio() {
     if (!currentGameId) return;
+    // Show skeleton cards while fetching
+    const statsEl = document.getElementById('dash-stats');
+    if (!portfolio) statsEl.innerHTML = SKELETON_CARD.repeat(3);
     try {
       const data = await api('GET',`/api/games/${currentGameId}/portfolio`);
       portfolio = data;
@@ -1344,7 +1378,7 @@ const App = (() => {
               <td class="muted" style="font-size:12px">${fmtDate(o.submitted_at)}</td>
               <td><span class="pill pill-${o.type==='buy'?'buy':'sell'}">${o.type.toUpperCase()}</span></td>
               <td><strong>${esc(o.symbol)}</strong><br><span class="muted" style="font-size:11px">${esc(o.company_name||'')}</span></td>
-              <td>${o.order_type==='limit'?'Limit':'Market'}</td>
+              <td>${o.order_type==='limit'?'Limit':'Market'}<br><span class="muted" style="font-size:10px">${o.order_type==='limit'?(o.type==='buy'?`fills ≤ ${fmt$(o.limit_price)}`:`fills ≥ ${fmt$(o.limit_price)}`):'fills at market open'}</span></td>
               <td class="text-right">${fmtShares(o.shares)}</td>
               <td class="text-right">${limitCol}</td>
               <td><span class="${statusColor}">${o.status.toUpperCase()}</span>${fillInfo?`<br><span class="muted" style="font-size:11px">${esc(fillInfo)}</span>`:''}${o.reject_reason?`<br><span class="red" style="font-size:11px">${esc(o.reject_reason)}</span>`:''}</td>
@@ -1466,7 +1500,9 @@ const App = (() => {
     }
   }
 
+  let _searchSelected = -1;
   function onSearchInput(val) {
+    _searchSelected = -1;
     clearTimeout(searchTimer);
     const dd = document.getElementById('search-dropdown');
     if (!val || val.length<1) { dd.style.display='none'; return; }
@@ -1474,6 +1510,20 @@ const App = (() => {
     searchTimer = setTimeout(() => doSearch(val), 320);
   }
   function onSearchFocus() { const v=document.getElementById('stock-search').value; if(v.length>=1) doSearch(v); }
+
+  function onSearchKeydown(e) {
+    const dd = document.getElementById('search-dropdown');
+    const items = dd.querySelectorAll('.search-item[data-symbol]');
+    if (!items.length) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); _searchSelected = Math.min(_searchSelected + 1, items.length - 1); _highlightSearchItem(items); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); _searchSelected = Math.max(_searchSelected - 1, 0); _highlightSearchItem(items); }
+    else if (e.key === 'Enter' && _searchSelected >= 0) { e.preventDefault(); App.selectStock(items[_searchSelected].dataset.symbol); }
+    else if (e.key === 'Escape') { dd.style.display='none'; }
+  }
+  function _highlightSearchItem(items) {
+    items.forEach((el, i) => el.style.background = i === _searchSelected ? 'var(--bg3)' : '');
+    if (items[_searchSelected]) items[_searchSelected].scrollIntoView({ block: 'nearest' });
+  }
 
   async function doSearch(q) {
     const dd = document.getElementById('search-dropdown');
@@ -1594,7 +1644,7 @@ const App = (() => {
     const isUp=prices[prices.length-1]>=prices[0],color=isUp?'#22c55e':'#ef4444';
     const fill=`${pad},${pad+h} ${pts} ${pad+w},${pad+h}`;
     const s0=data[0]?.date?new Date(data[0].date).toLocaleDateString():'',se=data[data.length-1]?.date?new Date(data[data.length-1].date).toLocaleDateString():'';
-    return `<svg width="100%" height="${height}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none"><defs><linearGradient id="cg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${color}" stop-opacity=".3"/><stop offset="100%" stop-color="${color}" stop-opacity="0"/></linearGradient></defs><polygon points="${fill}" fill="url(#cg)"/><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.8"/></svg><div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);padding:2px 4px"><span>${s0}</span><span>30-day</span><span>${se}</span></div>`;
+    return `<svg role="img" aria-label="30-day price chart" width="100%" height="${height}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none"><defs><linearGradient id="cg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${color}" stop-opacity=".3"/><stop offset="100%" stop-color="${color}" stop-opacity="0"/></linearGradient></defs><polygon points="${fill}" fill="url(#cg)"/><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.8"/></svg><div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);padding:2px 4px"><span>${s0}</span><span>30-day</span><span>${se}</span></div>`;
   }
 
   function setTradeType(type) {
@@ -1885,7 +1935,7 @@ const App = (() => {
       if(!rows.length){tbody.innerHTML='';document.getElementById('leaderboard-empty').style.display='';return;}
       document.getElementById('leaderboard-empty').style.display='none';
       tbody.innerHTML=rows.map(r=>`<tr class="${r.rank<=3?`rank-${r.rank}`:''} ${r.username===user?.username?'rank-self':''}">
-        <td><strong>#${r.rank}</strong></td><td>${esc(r.username)}</td>
+        <td><strong>#${r.rank}</strong></td><td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(r.username)}">${esc(r.username)}</td>
         <td class="text-right">${fmt$(r.cash_balance)}</td>
         <td class="text-right">${fmt$(r.stock_value)}</td>
         <td class="text-right ${colorClass(r.futures_pnl)}">${r.futures_pnl>=0?'+':''}${fmt$(r.futures_pnl)}</td>
@@ -2422,7 +2472,7 @@ const App = (() => {
     closeJoinPwModal, submitJoinPassword,
     openGamePlayersModal, closeGamePlayersModal, removePlayerFromGame,
     onPrivateToggle,
-    onSearchInput, onSearchFocus, selectStock,
+    onSearchInput, onSearchFocus, onSearchKeydown, selectStock,
     setTradeType, executeTrade, setMaxShares, updateTradeTotal, onOrderTypeChange, cancelOrder,
     filterFutures, selectFutures, setFuturesDir, updateFuturesTotal, updateFuturesSim, setMaxFuturesContracts, openFuturesPosition,
     openSellModal, closeSellModal, updateSellModalTotal, setSellModalMax, executeSellModal,

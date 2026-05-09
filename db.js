@@ -144,6 +144,20 @@ db.exec(`
   );
 `);
 
+// ── Indexes — dramatically speed up JOIN and WHERE queries on large datasets ──
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_portfolios_user_game   ON portfolios(user_id, game_id);
+  CREATE INDEX IF NOT EXISTS idx_holdings_user_game     ON holdings(user_id, game_id);
+  CREATE INDEX IF NOT EXISTS idx_holdings_game_shares   ON holdings(game_id, shares);
+  CREATE INDEX IF NOT EXISTS idx_transactions_user_game ON transactions(user_id, game_id);
+  CREATE INDEX IF NOT EXISTS idx_pending_orders_status  ON pending_orders(status, game_id);
+  CREATE INDEX IF NOT EXISTS idx_futures_pos_user_game  ON futures_positions(user_id, game_id);
+  CREATE INDEX IF NOT EXISTS idx_futures_tx_user_game   ON futures_transactions(user_id, game_id);
+  CREATE INDEX IF NOT EXISTS idx_api_keys_user          ON api_keys(user_id);
+  CREATE INDEX IF NOT EXISTS idx_api_keys_hash          ON api_keys(key_hash);
+  CREATE INDEX IF NOT EXISTS idx_server_settings_key    ON server_settings(key);
+`);
+
 // Safe migrations for existing databases — silently skip if column already exists
 const migrations = [
   "ALTER TABLE game_config    ADD COLUMN allow_futures    INTEGER NOT NULL DEFAULT 0",
