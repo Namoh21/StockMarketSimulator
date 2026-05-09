@@ -253,9 +253,13 @@ StockArena can send email via any SMTP relay. The free tier of [Brevo](https://w
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) for details.
+This project is licensed under the **GNU General Public License v3.0** — see [LICENSE](LICENSE) for the full text.
 
-This project is open source and free to use, modify, and self-host. Attribution is appreciated but not required.
+Key terms of GPL v3:
+- You are free to use, copy, modify, and distribute this software
+- Any modified version you distribute **must also be released under GPL v3**
+- You must make the source code available to anyone who receives the software
+- This software comes with **no warranty**
 
 ---
 
