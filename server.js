@@ -48,17 +48,26 @@ function decryptField(ciphertext) {
 // SHA-256 hash for API key lookup (keys are never stored in plaintext)
 function hashApiKey(key) { return crypto.createHash('sha256').update(key).digest('hex'); }
 
-// ── Token blacklist (in-memory, survives until restart — 24h max window) ──────
-const _blacklist = new Map(); // jti → exp (unix seconds)
-function blacklistToken(jti, exp) { if (jti) _blacklist.set(jti, exp); }
+// ── Token blacklist — DB-backed so revocations survive server restarts ────────
+function blacklistToken(jti, exp) {
+  if (!jti) return;
+  try { db.prepare('INSERT OR IGNORE INTO revoked_tokens (jti, exp) VALUES (?, ?)').run(jti, exp); } catch {}
+}
 function isBlacklisted(jti) {
   if (!jti) return false;
-  const exp = _blacklist.get(jti);
-  if (!exp) return false;
-  if (Date.now() / 1000 > exp) { _blacklist.delete(jti); return false; }
+  const row = db.prepare('SELECT exp FROM revoked_tokens WHERE jti = ?').get(jti);
+  if (!row) return false;
+  if (Date.now() / 1000 > row.exp) { // expired — clean it up
+    try { db.prepare('DELETE FROM revoked_tokens WHERE jti = ?').run(jti); } catch {}
+    return false;
+  }
   return true;
 }
-setInterval(() => { const now = Date.now() / 1000; for (const [j, e] of _blacklist) if (now > e) _blacklist.delete(j); }, 3_600_000);
+// Purge fully-expired revoked tokens once an hour
+try { db.prepare('DELETE FROM revoked_tokens WHERE exp < ?').run(Math.floor(Date.now() / 1000)); } catch {}
+setInterval(() => {
+  try { db.prepare('DELETE FROM revoked_tokens WHERE exp < ?').run(Math.floor(Date.now() / 1000)); } catch {}
+}, 3_600_000);
 
 // ── SMTP config helpers ────────────────────────────────────────────────────────
 function getSetting(key) {
@@ -317,9 +326,9 @@ function requireAuth(req, res, next) {
   const token = header.startsWith('Bearer ') ? header.slice(7) : header;
 
   if (token.startsWith('ska_')) {
-    // API key auth — look up by SHA-256 hash (keys never stored in plaintext)
+    // API key auth — look up by SHA-256 hash only (plaintext never stored)
     const keyHash = hashApiKey(token);
-    const keyRecord = db.prepare('SELECT * FROM api_keys WHERE key_hash = ? OR key_value = ?').get(keyHash, token);
+    const keyRecord = db.prepare('SELECT * FROM api_keys WHERE key_hash = ?').get(keyHash);
     if (!keyRecord) return res.status(401).json({ error: 'Invalid API key' });
     const dbUser = db.prepare('SELECT id, username, is_admin, is_approved FROM users WHERE id = ?').get(keyRecord.user_id);
     if (!dbUser) return res.status(401).json({ error: 'Unauthorized' });
@@ -362,6 +371,7 @@ function audit(req, action, detail = '') {
 const SYMBOL_RE = /^[A-Z0-9.=^-]{1,20}$/;
 function validSymbol(s)  { return typeof s === 'string' && SYMBOL_RE.test(s); }
 function validShares(n)  { return Number.isFinite(n) && n > 0 && n <= 1_000_000; }
+function validTotal(n)   { return Number.isFinite(n) && n >= 0; } // guards against NaN/Infinity in price×shares
 const ALLOWED_MARKETS    = new Set(['NYSE', 'NASDAQ', 'AMEX', 'ALL']);
 
 // ── Game middleware ───────────────────────────────────────────────────────────
@@ -415,8 +425,10 @@ function availableCash(userId, gameId, portfolio = null) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 app.post('/api/auth/register', async (req, res) => {
-  if (rateLimited(req.ip, 5, 15 * 60 * 1000))
+  if (rateLimited(req.ip, 5, 15 * 60 * 1000)) {
+    audit(req, 'RATE_LIMIT_EXCEEDED', 'register');
     return res.status(429).json({ error: 'Too many registration attempts — try again in 15 minutes' });
+  }
   const { username, password } = req.body || {};
   const email = req.body?.email?.trim() || `${username?.trim()}@local`;
   if (!username?.trim() || !password)
@@ -440,8 +452,10 @@ app.post('/api/auth/register', async (req, res) => {
 });
 
 app.post('/api/auth/login', async (req, res) => {
-  if (rateLimited(req.ip))
+  if (rateLimited(req.ip)) {
+    audit(req, 'RATE_LIMIT_EXCEEDED', 'login');
     return res.status(429).json({ error: 'Too many login attempts — try again in 15 minutes' });
+  }
   const { username, password } = req.body || {};
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
   const user = db.prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE').get(username.trim());
@@ -477,7 +491,8 @@ app.get('/api/user/api-keys', requireAuth, (req, res) => {
 
 // Generate a new API key — returns the full key ONCE; not stored in plaintext after this response
 app.post('/api/user/api-keys', requireAuth, (req, res) => {
-  const label = (req.body?.label || 'AI Agent').slice(0, 64).trim();
+  const label = (req.body?.label || 'AI Agent').trim().slice(0, 64);
+  if (!label) return res.status(400).json({ error: 'Label cannot be empty' });
   const existing = db.prepare('SELECT COUNT(*) as c FROM api_keys WHERE user_id = ?').get(req.user.id).c;
   if (existing >= 5) return res.status(400).json({ error: 'Maximum of 5 API keys per user. Revoke one before creating another.' });
   const key      = 'ska_' + crypto.randomBytes(32).toString('hex');
@@ -514,6 +529,8 @@ app.put('/api/user/profile', requireAuth, (req, res) => {
   const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
   if (email !== undefined) {
+    if (email && email.length > 255)
+      return res.status(400).json({ error: 'Email address too long (max 255 characters)' });
     if (email && !emailRe.test(email))
       return res.status(400).json({ error: 'Invalid email address' });
     // Check uniqueness (only if setting a real email, skip @local placeholders)
@@ -601,10 +618,13 @@ app.post('/api/games', requireAdmin, (req, res) => {
 });
 
 app.get('/api/games/:gameId', requireAuth, loadGame, (req, res) => {
-  const g = db.prepare('SELECT * FROM game_config WHERE id = ?').get(req.game.id); // re-fetch to get join_password for admin
+  const g = db.prepare('SELECT * FROM game_config WHERE id = ?').get(req.game.id);
   const playerCount = db.prepare('SELECT COUNT(*) as c FROM portfolios WHERE game_id = ?').get(g.id).c;
   const userJoined  = !!db.prepare('SELECT id FROM portfolios WHERE user_id = ? AND game_id = ?').get(req.user.id, g.id);
   const dbUser = db.prepare('SELECT is_admin FROM users WHERE id = ?').get(req.user.id);
+  // Non-admins cannot see private games they haven't joined (prevents enumeration)
+  if (g.is_private && !userJoined && !dbUser?.is_admin)
+    return res.status(404).json({ error: 'Game not found' });
   // Admins see the decrypted join_password so they can share it; regular users never see it
   if (dbUser?.is_admin) {
     const decrypted = g.join_password ? (decryptField(g.join_password) ?? g.join_password) : null;
@@ -681,12 +701,18 @@ app.post('/api/games/:gameId/join', requireAuth, loadGame, (req, res) => {
   // Private game — rate-limit password attempts then compare (admins bypass)
   const fullGame = db.prepare('SELECT * FROM game_config WHERE id = ?').get(game.id);
   if (fullGame.is_private && !dbUser.is_admin) {
-    if (rateLimited(`join:${req.user.id}:${game.id}`, 5, 10 * 60 * 1000))
+    if (rateLimited(`join:${req.user.id}:${game.id}`, 5, 10 * 60 * 1000)) {
+      audit(req, 'RATE_LIMIT_EXCEEDED', `join game ${game.id}`);
       return res.status(429).json({ error: 'Too many join attempts — try again in 10 minutes.' });
+    }
     const supplied = req.body?.join_password?.trim();
     if (!supplied) return res.status(403).json({ error: 'private_game', message: 'This game is password-protected. Enter the join password.' });
     const storedPw = decryptField(fullGame.join_password) ?? fullGame.join_password;
-    if (supplied !== storedPw)
+    // Use timing-safe comparison to prevent timing attacks
+    const sBuf = Buffer.from(supplied.padEnd(storedPw.length, '\0'));
+    const dBuf = Buffer.from(storedPw.padEnd(supplied.length, '\0'));
+    const same = sBuf.length === dBuf.length && crypto.timingSafeEqual(sBuf, dBuf);
+    if (!same)
       return res.status(403).json({ error: 'wrong_password', message: 'Incorrect join password.' });
   }
 
@@ -778,7 +804,7 @@ app.delete('/api/games/:gameId/players/:userId', requireAdmin, loadGame, (req, r
 app.get('/api/games/:gameId/portfolio', requireAuth, loadGame, async (req, res) => {
   const game = req.game;
   const portfolio = db.prepare('SELECT * FROM portfolios WHERE user_id = ? AND game_id = ?').get(req.user.id, game.id);
-  if (!portfolio) return res.status(404).json({ error: 'not_joined' });
+  if (!portfolio) return res.status(404).json({ error: 'not_joined' }); // client checks this exact string to redirect
 
   const holdings        = db.prepare('SELECT * FROM holdings WHERE user_id = ? AND game_id = ? AND shares > 0').all(req.user.id, game.id);
   const futuresPositions = game.allow_futures
@@ -855,6 +881,7 @@ app.get('/api/stocks/chart/:symbol', requireAuth, async (req, res) => {
 // ── Core fill logic (shared by immediate trades and background processor) ─────
 function applyFill(userId, gameId, symbol, companyName, type, shares, price) {
   const total = +(price * shares).toFixed(6);
+  if (!validTotal(total)) throw new Error('Invalid trade total — numeric overflow or NaN');
   db.transaction(() => {
     if (type === 'buy') {
       // Atomic conditional deduct — WHERE cash_balance >= total guarantees no overdraft
@@ -886,7 +913,7 @@ function applyFill(userId, gameId, symbol, companyName, type, shares, price) {
 }
 
 // ── Market status ──────────────────────────────────────────────────────────────
-app.get('/api/market/status', (req, res) => res.json(marketStatus()));
+app.get('/api/market/status', requireAuth, (req, res) => res.json(marketStatus()));
 
 // ── Unified order submission ───────────────────────────────────────────────────
 // order_type: 'market' | 'limit'   type: 'buy' | 'sell'
@@ -1095,6 +1122,7 @@ app.post('/api/games/:gameId/futures/open', requireAuth, loadGame, async (req, r
     return res.status(400).json({ error: `You have an open ${existing.direction.toUpperCase()} on ${symbol}. Close it before reversing direction.` });
 
   const marginNeeded = +(contracts * quote.price * game.futures_margin).toFixed(6);
+  if (!validTotal(marginNeeded)) return res.status(400).json({ error: 'Invalid margin calculation — check contracts and price' });
   const portfolio    = ensurePortfolio(req.user.id, game.id, game.starting_cash);
   if (marginNeeded > portfolio.cash_balance)
     return res.status(400).json({ error: `Insufficient margin — required $${marginNeeded.toFixed(2)}, available $${portfolio.cash_balance.toFixed(2)}` });
@@ -1138,6 +1166,8 @@ app.post('/api/games/:gameId/futures/close', requireAuth, loadGame, async (req, 
   const position = db.prepare('SELECT * FROM futures_positions WHERE user_id = ? AND game_id = ? AND symbol = ? AND contracts > 0').get(req.user.id, game.id, symbol);
   if (!position || position.contracts < contracts - 0.000001)
     return res.status(400).json({ error: `You only have ${position ? position.contracts : 0} contract(s) of ${symbol} open` });
+  if (!['long', 'short'].includes(position.direction))
+    return res.status(500).json({ error: 'Position has invalid direction — contact admin' });
 
   let quote;
   try { quote = await getQuote(symbol); } catch { return res.status(400).json({ error: 'Unable to fetch quote — symbol may be invalid or market data unavailable' }); }
@@ -1260,8 +1290,16 @@ app.delete('/api/admin/users/:userId', requireAdmin, (req, res) => {
   if (target.is_admin) return res.status(400).json({ error: 'Cannot delete an admin account.' });
   if (target.is_approved) return res.status(400).json({ error: 'Cannot delete an approved user. Revoke approval first, or delete via game management.' });
   if (target.id === req.user.id) return res.status(400).json({ error: 'Cannot delete your own account.' });
-  db.prepare('DELETE FROM api_keys WHERE user_id = ?').run(target.id);
-  db.prepare('DELETE FROM users WHERE id = ?').run(target.id);
+  db.transaction(() => {
+    db.prepare('DELETE FROM futures_transactions WHERE user_id = ?').run(target.id);
+    db.prepare('DELETE FROM futures_positions    WHERE user_id = ?').run(target.id);
+    db.prepare('DELETE FROM pending_orders       WHERE user_id = ?').run(target.id);
+    db.prepare('DELETE FROM transactions         WHERE user_id = ?').run(target.id);
+    db.prepare('DELETE FROM holdings             WHERE user_id = ?').run(target.id);
+    db.prepare('DELETE FROM portfolios           WHERE user_id = ?').run(target.id);
+    db.prepare('DELETE FROM api_keys             WHERE user_id = ?').run(target.id);
+    db.prepare('DELETE FROM users                WHERE id = ?').run(target.id);
+  })();
   audit(req, 'USER_DELETED', target.username);
   res.json({ message: `${target.username} has been deleted.` });
 });
