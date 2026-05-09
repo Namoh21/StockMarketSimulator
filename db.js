@@ -157,6 +157,8 @@ const migrations = [
   "ALTER TABLE users          ADD COLUMN notify_trades    INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE users          ADD COLUMN notify_daily     INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE users          ADD COLUMN notify_ranking   INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE api_keys       ADD COLUMN key_hash         TEXT",
+  "ALTER TABLE api_keys       ADD COLUMN key_preview      TEXT",
 ];
 for (const sql of migrations) { try { db.exec(sql); } catch {} }
 

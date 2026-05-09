@@ -9,9 +9,10 @@ import { configureMailer, isEmailEnabled, sendEmail, buildTradeEmail, buildDaily
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
+app.disable('x-powered-by'); // don't leak framework fingerprint
 const PORT = process.env.PORT || 8081;
 
-// Require a real secret; fall back to a random one (invalidates sessions on restart)
+// ── JWT secret — must be set in production ────────────────────────────────────
 const JWT_SECRET = (() => {
   const s = process.env.JWT_SECRET;
   if (!s || s === 'stockarena-change-this-secret-in-production') {
@@ -21,6 +22,43 @@ const JWT_SECRET = (() => {
   return s;
 })();
 
+// ── AES-256-GCM field encryption (protects SMTP password, join passwords in DB) ─
+// Key is derived from JWT_SECRET — changing the secret invalidates all encrypted fields.
+const _ENC_KEY = crypto.scryptSync(JWT_SECRET, 'stockarena-field-enc-v1', 32);
+
+function encryptField(plaintext) {
+  if (!plaintext) return null;
+  const iv = crypto.randomBytes(12);
+  const c  = crypto.createCipheriv('aes-256-gcm', _ENC_KEY, iv);
+  const enc = Buffer.concat([c.update(String(plaintext), 'utf8'), c.final()]);
+  return Buffer.concat([iv, c.getAuthTag(), enc]).toString('base64');
+}
+
+function decryptField(ciphertext) {
+  if (!ciphertext) return null;
+  try {
+    const buf = Buffer.from(ciphertext, 'base64');
+    const d   = crypto.createDecipheriv('aes-256-gcm', _ENC_KEY, buf.subarray(0, 12));
+    d.setAuthTag(buf.subarray(12, 28));
+    return Buffer.concat([d.update(buf.subarray(28)), d.final()]).toString('utf8');
+  } catch { return null; }
+}
+
+// SHA-256 hash for API key lookup (keys are never stored in plaintext)
+function hashApiKey(key) { return crypto.createHash('sha256').update(key).digest('hex'); }
+
+// ── Token blacklist (in-memory, survives until restart — 24h max window) ──────
+const _blacklist = new Map(); // jti → exp (unix seconds)
+function blacklistToken(jti, exp) { if (jti) _blacklist.set(jti, exp); }
+function isBlacklisted(jti) {
+  if (!jti) return false;
+  const exp = _blacklist.get(jti);
+  if (!exp) return false;
+  if (Date.now() / 1000 > exp) { _blacklist.delete(jti); return false; }
+  return true;
+}
+setInterval(() => { const now = Date.now() / 1000; for (const [j, e] of _blacklist) if (now > e) _blacklist.delete(j); }, 3_600_000);
+
 // ── SMTP config helpers ────────────────────────────────────────────────────────
 function getSetting(key) {
   return db.prepare('SELECT value FROM server_settings WHERE key = ?').get(key)?.value || '';
@@ -29,39 +67,48 @@ function setSetting(key, value) {
   db.prepare('INSERT INTO server_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value ?? '');
 }
 
-// Load SMTP at startup — DB values take priority over env vars
+// Load SMTP at startup — DB values take priority over env vars; password is AES-encrypted in DB
 (async () => {
-  const host = getSetting('smtp_host') || process.env.SMTP_HOST || '';
-  const port = getSetting('smtp_port') || process.env.SMTP_PORT || '587';
-  const user = getSetting('smtp_user') || process.env.SMTP_USER || '';
-  const pass = getSetting('smtp_pass') || process.env.SMTP_PASS || '';
-  const from = getSetting('email_from') || process.env.EMAIL_FROM || '';
-  const baseUrl = getSetting('base_url') || process.env.BASE_URL || `http://localhost:${PORT}`;
+  const host    = getSetting('smtp_host') || process.env.SMTP_HOST || '';
+  const port    = getSetting('smtp_port') || process.env.SMTP_PORT || '587';
+  const user    = getSetting('smtp_user') || process.env.SMTP_USER || '';
+  const rawPass = getSetting('smtp_pass') || '';
+  const pass    = (rawPass ? (decryptField(rawPass) ?? rawPass) : '') || process.env.SMTP_PASS || '';
+  const from    = getSetting('email_from') || process.env.EMAIL_FROM || '';
+  const baseUrl = getSetting('base_url')   || process.env.BASE_URL   || `http://localhost:${PORT}`;
   if (host && user && pass) await configureMailer({ host, port, user, pass, from, baseUrl });
-  else if (from || baseUrl) await configureMailer({ from, baseUrl }); // configure display values even without SMTP
+  else if (from || baseUrl) await configureMailer({ from, baseUrl });
 })();
 
-// ── CORS — allow AI agents running from any origin to reach the API ───────────
+// ── CORS — AI agents can use API keys from any origin; browsers restricted ────
+// API keys use Authorization header (not cookies) so wildcard is less dangerous,
+// but we still restrict to the configured origin where possible.
 app.use((req, res, next) => {
-  // API routes need open CORS so agents can call them from any host/script
   if (req.path.startsWith('/api/')) {
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    const configuredOrigin = getSetting('base_url') || process.env.BASE_URL || '';
+    // Use configured origin for browser clients; fall back to wildcard for agents
+    const origin = configuredOrigin || '*';
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    if (origin !== '*') res.setHeader('Vary', 'Origin');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Access-Control-Max-Age', '86400');
     if (req.method === 'OPTIONS') return res.sendStatus(204);
   }
   next();
 });
 
-// ── Security headers (applied to non-API / HTML responses) ───────────────────
+// ── Security headers ──────────────────────────────────────────────────────────
 app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   if (!req.path.startsWith('/api/')) {
     res.setHeader('X-Frame-Options', 'DENY');
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('X-XSS-Protection', '1; mode=block');
-    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     res.setHeader('Content-Security-Policy',
-      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'");
+      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; " +
+      "img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'");
   }
   next();
 });
@@ -79,7 +126,7 @@ function rateLimited(key, maxHits = 10, windowMs = 15 * 60 * 1000) {
 // Clean stale buckets every 30 minutes
 setInterval(() => { const now = Date.now(); for (const [k, b] of _rateBuckets) if (now > b.resetAt) _rateBuckets.delete(k); }, 30 * 60 * 1000);
 
-app.use(express.json());
+app.use(express.json({ limit: '50kb' })); // prevent oversized payload DoS
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ── Yahoo Finance direct API ──────────────────────────────────────────────────
@@ -262,11 +309,12 @@ function requireAuth(req, res, next) {
   const token = header.startsWith('Bearer ') ? header.slice(7) : header;
 
   if (token.startsWith('ska_')) {
-    // API key auth — used by AI agents
-    const keyRecord = db.prepare('SELECT * FROM api_keys WHERE key_value = ?').get(token);
+    // API key auth — look up by SHA-256 hash (keys never stored in plaintext)
+    const keyHash = hashApiKey(token);
+    const keyRecord = db.prepare('SELECT * FROM api_keys WHERE key_hash = ? OR key_value = ?').get(keyHash, token);
     if (!keyRecord) return res.status(401).json({ error: 'Invalid API key' });
     const dbUser = db.prepare('SELECT id, username, is_admin, is_approved FROM users WHERE id = ?').get(keyRecord.user_id);
-    if (!dbUser) return res.status(401).json({ error: 'User not found' });
+    if (!dbUser) return res.status(401).json({ error: 'Unauthorized' });
     if (!dbUser.is_approved) return res.status(403).json({ error: 'Account not approved' });
     db.prepare("UPDATE api_keys SET last_used = datetime('now') WHERE id = ?").run(keyRecord.id);
     req.user = dbUser;
@@ -275,7 +323,9 @@ function requireAuth(req, res, next) {
   }
 
   try {
-    req.user = jwt.verify(token, JWT_SECRET);
+    const payload = jwt.verify(token, JWT_SECRET);
+    if (isBlacklisted(payload.jti)) return res.status(401).json({ error: 'Session expired — please log in again' });
+    req.user = payload;
     next();
   } catch { res.status(401).json({ error: 'Invalid or expired token' }); }
 }
@@ -286,6 +336,18 @@ function requireAdmin(req, res, next) {
     if (!dbUser?.is_admin) return res.status(403).json({ error: 'Admin only' });
     next();
   });
+}
+
+// ── JWT signing helper ────────────────────────────────────────────────────────
+function signToken(user) {
+  const jti = crypto.randomBytes(16).toString('hex');
+  return jwt.sign({ id: user.id, username: user.username, is_admin: user.is_admin, jti }, JWT_SECRET, { expiresIn: '24h' });
+}
+
+// ── Audit logger ──────────────────────────────────────────────────────────────
+function audit(req, action, detail = '') {
+  const who = req.user?.username || req.ip;
+  console.log(`[AUDIT] ${new Date().toISOString()} ${who} — ${action}${detail ? ': ' + detail : ''}`);
 }
 
 // ── Input validation helpers ──────────────────────────────────────────────────
@@ -314,7 +376,7 @@ function loadGame(req, res, next) {
     next();
   } catch (err) {
     console.error('loadGame error:', err.message);
-    res.status(500).json({ error: 'Failed to load game: ' + err.message });
+    res.status(500).json({ error: 'Failed to load game' });
   }
 }
 
@@ -360,7 +422,8 @@ app.post('/api/auth/register', async (req, res) => {
       'INSERT INTO users (username, email, password_hash, is_admin, is_approved) VALUES (?, ?, ?, ?, ?)'
     ).run(username.trim(), email.trim().toLowerCase(), hash, isFirst ? 1 : 0, isFirst ? 1 : 0);
     const user  = db.prepare('SELECT id, username, email, is_admin, is_approved FROM users WHERE id = ?').get(lastInsertRowid);
-    const token = jwt.sign({ id: user.id, username: user.username, is_admin: user.is_admin }, JWT_SECRET, { expiresIn: '7d' });
+    const token = signToken(user);
+    audit(req, 'REGISTER', user.username);
     res.json({ token, user });
   } catch (err) {
     if (err.message.includes('UNIQUE')) return res.status(400).json({ error: 'Username or email already taken' });
@@ -376,7 +439,8 @@ app.post('/api/auth/login', async (req, res) => {
   const user = db.prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE').get(username.trim());
   if (!user || !(await bcrypt.compare(password, user.password_hash)))
     return res.status(401).json({ error: 'Invalid credentials' });
-  const token = jwt.sign({ id: user.id, username: user.username, is_admin: user.is_admin }, JWT_SECRET, { expiresIn: '7d' });
+  const token = signToken(user);
+  audit(req, 'LOGIN', user.username);
   res.json({ token, user: { id: user.id, username: user.username, email: user.email, is_admin: user.is_admin, is_approved: user.is_approved } });
 });
 
@@ -384,6 +448,12 @@ app.get('/api/auth/me', requireAuth, (req, res) => {
   const user = db.prepare('SELECT id, username, email, is_admin, is_approved FROM users WHERE id = ?').get(req.user.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
   res.json(user);
+});
+
+app.post('/api/auth/logout', requireAuth, (req, res) => {
+  if (req.user.jti) blacklistToken(req.user.jti, req.user.exp);
+  audit(req, 'LOGOUT');
+  res.json({ message: 'Logged out.' });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -402,8 +472,14 @@ app.post('/api/user/api-keys', requireAuth, (req, res) => {
   const label = (req.body?.label || 'AI Agent').slice(0, 64).trim();
   const existing = db.prepare('SELECT COUNT(*) as c FROM api_keys WHERE user_id = ?').get(req.user.id).c;
   if (existing >= 5) return res.status(400).json({ error: 'Maximum of 5 API keys per user. Revoke one before creating another.' });
-  const key = 'ska_' + crypto.randomBytes(32).toString('hex');
-  const { lastInsertRowid } = db.prepare('INSERT INTO api_keys (user_id, label, key_value) VALUES (?, ?, ?)').run(req.user.id, label, key);
+  const key      = 'ska_' + crypto.randomBytes(32).toString('hex');
+  const keyHash  = hashApiKey(key);
+  const keyPreview = key.slice(0, 12) + '…';
+  // Store SHA-256 hash only — the plaintext key is shown once and never persisted
+  const { lastInsertRowid } = db.prepare(
+    'INSERT INTO api_keys (user_id, label, key_value, key_hash, key_preview) VALUES (?, ?, ?, ?, ?)'
+  ).run(req.user.id, label, keyHash, keyHash, keyPreview);
+  audit(req, 'API_KEY_CREATED', label);
   res.json({ id: lastInsertRowid, label, key, message: 'Save this key — it will not be shown again.' });
 });
 
@@ -509,8 +585,9 @@ app.post('/api/games', requireAdmin, (req, res) => {
     allow_futures    ? 1 : 0,
     parseFloat(futures_margin) || 0.20,
     priv,
-    priv ? join_password.trim() : null
+    priv ? encryptField(join_password.trim()) : null  // stored encrypted
   );
+  audit(req, 'CREATE_GAME', title?.trim() || 'Stock Trading Game');
   const game = db.prepare('SELECT * FROM game_config WHERE id = ?').get(lastInsertRowid);
   res.json({ ...game, markets: JSON.parse(game.markets), status: gameStatus(game) });
 });
@@ -520,9 +597,10 @@ app.get('/api/games/:gameId', requireAuth, loadGame, (req, res) => {
   const playerCount = db.prepare('SELECT COUNT(*) as c FROM portfolios WHERE game_id = ?').get(g.id).c;
   const userJoined  = !!db.prepare('SELECT id FROM portfolios WHERE user_id = ? AND game_id = ?').get(req.user.id, g.id);
   const dbUser = db.prepare('SELECT is_admin FROM users WHERE id = ?').get(req.user.id);
-  // Admins see the join_password so they can share it; regular users never see it
+  // Admins see the decrypted join_password so they can share it; regular users never see it
   if (dbUser?.is_admin) {
-    return res.json({ ...g, markets: JSON.parse(g.markets), status: gameStatus(g), player_count: playerCount, user_joined: userJoined });
+    const decrypted = g.join_password ? (decryptField(g.join_password) ?? g.join_password) : null;
+    return res.json({ ...g, join_password: decrypted, markets: JSON.parse(g.markets), status: gameStatus(g), player_count: playerCount, user_joined: userJoined });
   }
   res.json(publicGame(g, { player_count: playerCount, user_joined: userJoined }));
 });
@@ -541,8 +619,10 @@ app.put('/api/games/:gameId', requireAdmin, loadGame, (req, res) => {
     return res.status(400).json({ error: 'end_date must be after start_date' });
 
   const newPrivate = body.is_private !== undefined ? (body.is_private ? 1 : 0) : game.is_private;
+  // Preserve existing encrypted password if admin didn't supply a new one
+  const existingPw = game.join_password; // already encrypted in DB
   const newPassword = newPrivate
-    ? (body.join_password?.trim() || game.join_password || null)
+    ? (body.join_password?.trim() ? encryptField(body.join_password.trim()) : existingPw)
     : null;
   if (newPrivate && !newPassword)
     return res.status(400).json({ error: 'A join password is required for private games' });
@@ -590,12 +670,15 @@ app.post('/api/games/:gameId/join', requireAuth, loadGame, (req, res) => {
   const existing = db.prepare('SELECT * FROM portfolios WHERE user_id = ? AND game_id = ?').get(req.user.id, game.id);
   if (existing) return res.json({ message: 'Already joined', already_joined: true });
 
-  // Private game — check join password (admins bypass)
+  // Private game — rate-limit password attempts then compare (admins bypass)
   const fullGame = db.prepare('SELECT * FROM game_config WHERE id = ?').get(game.id);
   if (fullGame.is_private && !dbUser.is_admin) {
+    if (rateLimited(`join:${req.user.id}:${game.id}`, 5, 10 * 60 * 1000))
+      return res.status(429).json({ error: 'Too many join attempts — try again in 10 minutes.' });
     const supplied = req.body?.join_password?.trim();
     if (!supplied) return res.status(403).json({ error: 'private_game', message: 'This game is password-protected. Enter the join password.' });
-    if (supplied !== fullGame.join_password)
+    const storedPw = decryptField(fullGame.join_password) ?? fullGame.join_password;
+    if (supplied !== storedPw)
       return res.status(403).json({ error: 'wrong_password', message: 'Incorrect join password.' });
   }
 
@@ -656,7 +739,7 @@ app.get('/api/games/:gameId/players', requireAdmin, loadGame, (req, res) => {
     res.json(rows);
   } catch (err) {
     console.error('GET /players error:', err.message);
-    res.status(500).json({ error: 'Failed to load players: ' + err.message });
+    res.status(500).json({ error: 'Failed to load players' });
   }
 });
 
@@ -729,7 +812,7 @@ app.get('/api/games/:gameId/portfolio', requireAuth, loadGame, async (req, res) 
 // STOCK ROUTES (game-agnostic)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-app.get('/api/stocks/search', async (req, res) => {
+app.get('/api/stocks/search', requireAuth, async (req, res) => {
   const { q } = req.query;
   if (!q || q.length < 1) return res.json([]);
   try {
@@ -740,16 +823,16 @@ app.get('/api/stocks/search', async (req, res) => {
       .map(r => ({ symbol: r.symbol, name: r.longname || r.shortname || r.symbol, exchange: r.exchange || '', type: r.quoteType })));
   } catch (err) {
     console.error('Search error:', err.message);
-    res.status(500).json({ error: 'Search failed: ' + err.message });
+    res.status(500).json({ error: 'Search unavailable' });
   }
 });
 
-app.get('/api/stocks/quote/:symbol', async (req, res) => {
+app.get('/api/stocks/quote/:symbol', requireAuth, async (req, res) => {
   try { res.json(await getQuote(req.params.symbol)); }
-  catch (err) { res.status(404).json({ error: err.message }); }
+  catch { res.status(404).json({ error: 'Quote unavailable' }); }
 });
 
-app.get('/api/stocks/chart/:symbol', async (req, res) => {
+app.get('/api/stocks/chart/:symbol', requireAuth, async (req, res) => {
   try {
     const period1 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     res.json(await yfChart(req.params.symbol.toUpperCase(), period1));
@@ -817,7 +900,7 @@ app.post('/api/games/:gameId/orders', requireAuth, loadGame, async (req, res) =>
   if (order_type === 'limit' && (limit_price == null || limit_price <= 0)) return res.status(400).json({ error: 'A positive limit price is required for limit orders' });
 
   let quote;
-  try { quote = await getQuote(symbol); } catch (err) { return res.status(400).json({ error: err.message }); }
+  try { quote = await getQuote(symbol); } catch { return res.status(400).json({ error: 'Unable to fetch quote — symbol may be invalid or market data unavailable' }); }
 
   if (!isExchangeAllowed(quote.exchange, game.markets))
     return res.status(400).json({ error: `${symbol} (${quote.exchange}) is not in the allowed markets: ${game.markets.join(', ')}` });
@@ -904,7 +987,7 @@ app.post('/api/games/:gameId/trades/buy', requireAuth, loadGame, async (req, res
   symbol = symbol?.toUpperCase(); shares = parseFloat(shares);
   if (!symbol || isNaN(shares) || shares <= 0) return res.status(400).json({ error: 'symbol and positive shares are required' });
   if (game.status !== 'active') return res.status(400).json({ error: game.status === 'pending' ? 'Game has not started yet' : 'Game has ended' });
-  let quote; try { quote = await getQuote(symbol); } catch (err) { return res.status(400).json({ error: err.message }); }
+  let quote; try { quote = await getQuote(symbol); } catch { return res.status(400).json({ error: 'Unable to fetch quote — symbol may be invalid or market data unavailable' }); }
   if (!isExchangeAllowed(quote.exchange, game.markets)) return res.status(400).json({ error: `${symbol} not in allowed markets` });
   const portfolio   = ensurePortfolio(req.user.id, game.id, game.starting_cash);
   const cost        = +(quote.price * shares).toFixed(6);
@@ -928,7 +1011,7 @@ app.post('/api/games/:gameId/trades/sell', requireAuth, loadGame, async (req, re
   if (game.status !== 'active') return res.status(400).json({ error: game.status === 'pending' ? 'Game has not started yet' : 'Game has ended' });
   const holding = db.prepare('SELECT * FROM holdings WHERE user_id = ? AND game_id = ? AND symbol = ?').get(req.user.id, game.id, symbol);
   if (!holding || holding.shares < shares - 0.000001) return res.status(400).json({ error: `Insufficient shares — you own ${holding ? holding.shares.toFixed(4) : 0} share(s) of ${symbol}` });
-  let quote; try { quote = await getQuote(symbol); } catch (err) { return res.status(400).json({ error: err.message }); }
+  let quote; try { quote = await getQuote(symbol); } catch { return res.status(400).json({ error: 'Unable to fetch quote — symbol may be invalid or market data unavailable' }); }
   if (!isMarketOpen()) {
     const { lastInsertRowid } = db.prepare('INSERT INTO pending_orders (user_id,game_id,symbol,company_name,type,order_type,shares) VALUES (?,?,?,?,?,?,?)')
       .run(req.user.id, game.id, symbol, quote.name, 'sell', 'market', shares);
@@ -996,7 +1079,7 @@ app.post('/api/games/:gameId/futures/open', requireAuth, loadGame, async (req, r
   if (!contractInfo) return res.status(400).json({ error: `${symbol} is not a supported futures contract` });
 
   let quote;
-  try { quote = await getQuote(symbol); } catch (err) { return res.status(400).json({ error: err.message }); }
+  try { quote = await getQuote(symbol); } catch { return res.status(400).json({ error: 'Unable to fetch quote — symbol may be invalid or market data unavailable' }); }
 
   const existing = db.prepare('SELECT * FROM futures_positions WHERE user_id = ? AND game_id = ? AND symbol = ? AND contracts > 0').get(req.user.id, game.id, symbol);
   if (existing && existing.direction !== direction)
@@ -1048,7 +1131,7 @@ app.post('/api/games/:gameId/futures/close', requireAuth, loadGame, async (req, 
     return res.status(400).json({ error: `You only have ${position ? position.contracts : 0} contract(s) of ${symbol} open` });
 
   let quote;
-  try { quote = await getQuote(symbol); } catch (err) { return res.status(400).json({ error: err.message }); }
+  try { quote = await getQuote(symbol); } catch { return res.status(400).json({ error: 'Unable to fetch quote — symbol may be invalid or market data unavailable' }); }
 
   const pnl              = (position.direction === 'long' ? (quote.price - position.entry_price) : (position.entry_price - quote.price)) * contracts;
   const proportionMargin = (contracts / position.contracts) * position.margin_held;
@@ -1090,7 +1173,7 @@ app.delete('/api/games/:gameId', requireAdmin, loadGame, (req, res) => {
     res.json({ message: `"${title}" and all its data have been deleted.` });
   } catch (err) {
     console.error('Delete game error:', err.message);
-    res.status(500).json({ error: 'Failed to delete game: ' + err.message });
+    res.status(500).json({ error: 'Failed to delete game' });
   }
 });
 
@@ -1114,16 +1197,18 @@ app.put('/api/admin/settings/smtp', requireAdmin, async (req, res) => {
   setSetting('smtp_port',  smtp_port  ?? '587');
   setSetting('smtp_user',  smtp_user  ?? '');
   // Only overwrite password if a new one was supplied (not the masked placeholder)
-  if (smtp_pass && smtp_pass !== '••••••••') setSetting('smtp_pass', smtp_pass);
+  if (smtp_pass && smtp_pass !== '••••••••') setSetting('smtp_pass', encryptField(smtp_pass)); // stored encrypted
   setSetting('email_from', email_from ?? '');
   setSetting('base_url',   base_url   ?? '');
 
   const host = getSetting('smtp_host');
   const user = getSetting('smtp_user');
-  const pass = getSetting('smtp_pass');
+  const rawPass = getSetting('smtp_pass');
+  const pass    = rawPass ? (decryptField(rawPass) ?? rawPass) : '';
   const port = getSetting('smtp_port');
   const from = getSetting('email_from');
   const url  = getSetting('base_url');
+  audit(req, 'SMTP_SETTINGS_CHANGED');
   const result = await configureMailer({ host, port, user, pass, from, baseUrl: url });
   res.json({ message: result.ok ? 'SMTP settings saved and connection verified.' : `Settings saved — but connection failed: ${result.error}`, enabled: result.ok });
 });
@@ -1147,6 +1232,7 @@ app.post('/api/admin/users/:userId/approve', requireAdmin, (req, res) => {
   const target = db.prepare('SELECT id, username FROM users WHERE id = ?').get(req.params.userId);
   if (!target) return res.status(404).json({ error: 'User not found' });
   db.prepare('UPDATE users SET is_approved = 1 WHERE id = ?').run(target.id);
+  audit(req, 'USER_APPROVED', target.username);
   res.json({ message: `${target.username} has been approved.` });
 });
 
@@ -1155,6 +1241,7 @@ app.post('/api/admin/users/:userId/revoke', requireAdmin, (req, res) => {
   if (!target) return res.status(404).json({ error: 'User not found' });
   if (target.is_admin) return res.status(400).json({ error: 'Cannot revoke approval from an admin account.' });
   db.prepare('UPDATE users SET is_approved = 0 WHERE id = ?').run(target.id);
+  audit(req, 'USER_REVOKED', target.username);
   res.json({ message: `${target.username}'s approval has been revoked.` });
 });
 
@@ -1166,6 +1253,7 @@ app.delete('/api/admin/users/:userId', requireAdmin, (req, res) => {
   if (target.id === req.user.id) return res.status(400).json({ error: 'Cannot delete your own account.' });
   db.prepare('DELETE FROM api_keys WHERE user_id = ?').run(target.id);
   db.prepare('DELETE FROM users WHERE id = ?').run(target.id);
+  audit(req, 'USER_DELETED', target.username);
   res.json({ message: `${target.username} has been deleted.` });
 });
 
@@ -1346,7 +1434,7 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.ht
 // ── Global error handler — catches any unhandled throw in route handlers ──────
 app.use((err, req, res, _next) => {
   console.error(`[ERROR] ${req.method} ${req.path}:`, err.message);
-  if (!res.headersSent) res.status(500).json({ error: err.message || 'Internal server error' });
+  if (!res.headersSent) res.status(500).json({ error: 'Internal server error' });
 });
 
 app.listen(PORT, '0.0.0.0', () => console.log(`\n  StockArena running at http://0.0.0.0:${PORT}\n`));

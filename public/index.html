@@ -670,6 +670,9 @@
           Configure an SMTP relay so StockArena can send trade alerts and daily summaries to players.
           We recommend <strong>Brevo</strong> — free tier is 300 emails/day, no credit card required.
           Sign up at <strong>brevo.com</strong> → <em>Settings → SMTP &amp; API → SMTP</em> to get your credentials.
+          <br><br>🔐 <strong>Security note:</strong> The SMTP password is stored encrypted (AES-256-GCM) in the database.
+          For full at-rest protection on a Raspberry Pi, enable filesystem encryption with
+          <code style="background:var(--bg2);padding:1px 4px;border-radius:3px">cryptsetup</code> / LUKS on your SD card.
         </div>
         <div class="admin-grid">
           <div class="form-group">
@@ -1137,7 +1140,8 @@ const App = (() => {
     } catch(err) { document.getElementById('reg-error').textContent=err.message; }
   }
 
-  function logout() {
+  async function logout() {
+    try { await api('POST', '/api/auth/logout'); } catch {} // revoke token server-side
     token=null; user=null; exitGame();
     localStorage.removeItem('sa_token'); clearInterval(refreshTimer);
     document.getElementById('app-shell').style.display='none';
@@ -1478,7 +1482,7 @@ const App = (() => {
       if (!r.length) { dd.innerHTML='<div class="search-item muted">No results</div>'; dd.style.display='block'; return; }
       dd.innerHTML = r.map(s=>`<div class="search-item" data-symbol="${esc(s.symbol)}" onclick="App.selectStock(this.dataset.symbol)"><div><div class="search-sym">${esc(s.symbol)}</div><div class="search-name">${esc(s.name||'')}</div></div><div class="search-exch">${esc(s.exchange||'')}</div></div>`).join('');
       dd.style.display='block';
-    } catch(err) { dd.innerHTML=`<div class="search-item" style="color:var(--red)">${err.message}</div>`; dd.style.display='block'; }
+    } catch { dd.innerHTML=`<div class="search-item" style="color:var(--red)">Search unavailable</div>`; dd.style.display='block'; }
   }
 
   async function selectStock(symbol) {
