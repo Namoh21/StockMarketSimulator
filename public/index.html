@@ -1229,7 +1229,10 @@ const App = (() => {
           </div>
         </div>`;
       }).join('');
-    } catch(err) { console.error(err); }
+    } catch(err) {
+      if (err.message.includes('Unauthorized') || err.message.includes('401')) { logout(); return; }
+      document.getElementById('games-list').innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-text">Could not load games: ${esc(err.message)}</div></div>`;
+    }
   }
 
   let joinPwGameId = null;
