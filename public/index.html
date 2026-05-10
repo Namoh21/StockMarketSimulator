@@ -1230,7 +1230,15 @@ const App = (() => {
         </div>`;
       }).join('');
     } catch(err) {
-      if (err.status === 401) { logout(); return; }
+      if (err.status === 401) {
+        // Clear client state only — do NOT call server logout (would blacklist the fresh token)
+        token = null; user = null; localStorage.removeItem('sa_token');
+        document.getElementById('app-shell').style.display = 'none';
+        document.getElementById('pending-shell').style.display = 'none';
+        document.getElementById('auth-shell').style.display = 'flex';
+        switchAuthTab('login');
+        return;
+      }
       document.getElementById('games-list').innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-text">Could not load games: ${esc(err.message)}</div></div>`;
     }
   }
