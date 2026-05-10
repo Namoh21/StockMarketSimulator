@@ -112,6 +112,12 @@ db.exec(`
     value TEXT NOT NULL DEFAULT ''
   );
 
+  CREATE TABLE IF NOT EXISTS revoked_tokens (
+    jti        TEXT    PRIMARY KEY,
+    revoked_at TEXT    NOT NULL DEFAULT (datetime('now')),
+    exp        INTEGER NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS api_keys (
     id         INTEGER PRIMARY KEY,
     user_id    INTEGER NOT NULL,
@@ -162,6 +168,15 @@ const migrations = [
 ];
 for (const sql of migrations) { try { db.exec(sql); } catch {} }
 
+// Migrate: create revoked_tokens table if missing (was omitted from initial schema on some installs)
+try {
+  db.exec(`CREATE TABLE IF NOT EXISTS revoked_tokens (
+    jti        TEXT    PRIMARY KEY,
+    revoked_at TEXT    NOT NULL DEFAULT (datetime('now')),
+    exp        INTEGER NOT NULL
+  )`);
+} catch {}
+
 // Migrate: old schema had is_active=0 on deactivated games; set all existing to active=1
 // so they show up in the new multi-game lobby (admin can deactivate manually if desired)
 try {
@@ -185,6 +200,7 @@ const _indexes = [
   'CREATE INDEX IF NOT EXISTS idx_api_keys_user          ON api_keys(user_id)',
   'CREATE INDEX IF NOT EXISTS idx_api_keys_hash          ON api_keys(key_hash)',
   'CREATE INDEX IF NOT EXISTS idx_server_settings_key    ON server_settings(key)',
+  'CREATE INDEX IF NOT EXISTS idx_revoked_tokens_exp     ON revoked_tokens(exp)',
 ];
 for (const sql of _indexes) { try { db.exec(sql); } catch {} }
 
