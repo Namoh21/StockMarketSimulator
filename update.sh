@@ -66,24 +66,29 @@ fi
 step "Fetching latest code from GitHub"
 git -C "$INSTALL_DIR" fetch origin
 
+BRANCH=$(git -C "$INSTALL_DIR" rev-parse --abbrev-ref origin/HEAD 2>/dev/null | sed 's|origin/||' || echo "main")
 LOCAL=$(git -C "$INSTALL_DIR" rev-parse HEAD)
-REMOTE=$(git -C "$INSTALL_DIR" rev-parse origin/main 2>/dev/null || git -C "$INSTALL_DIR" rev-parse origin/master)
+REMOTE=$(git -C "$INSTALL_DIR" rev-parse "origin/$BRANCH" 2>/dev/null)
+
+if [[ -z "$REMOTE" ]]; then
+    error "Could not resolve remote branch. Check your GitHub remote."
+fi
 
 if [[ "$LOCAL" == "$REMOTE" ]]; then
     success "Already up to date — no changes to pull"
     UPDATED=false
 else
-    info "Changes detected — pulling…"
-    # Stash any local modifications so pull doesn't fail
+    info "Changes detected — resetting to origin/$BRANCH…"
+    # Use reset --hard so force-pushes and history rewrites are always handled cleanly
     git -C "$INSTALL_DIR" stash --quiet 2>/dev/null || true
-    git -C "$INSTALL_DIR" pull origin main 2>/dev/null || git -C "$INSTALL_DIR" pull origin master
+    git -C "$INSTALL_DIR" reset --hard "origin/$BRANCH"
     NEW_VERSION=$(git -C "$INSTALL_DIR" rev-parse --short HEAD)
     success "Updated $CURRENT_VERSION → $NEW_VERSION"
 
-    # Show what changed
+    # Show what changed (best effort — may show nothing after a rebase/rewrite)
     echo ""
     echo -e "${Y}Changes:${N}"
-    git -C "$INSTALL_DIR" log --oneline "${LOCAL}..HEAD" | head -20
+    git -C "$INSTALL_DIR" log --oneline "${LOCAL}..HEAD" 2>/dev/null | head -20 || true
     echo ""
     UPDATED=true
 fi
