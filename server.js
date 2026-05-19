@@ -1286,6 +1286,103 @@ app.post('/api/games/:gameId/metals/sell', requireAuth, loadGame, async (req, re
   res.json({ filled: true, message: `Sold ${oz} oz of ${metal.name} at $${quote.price.toFixed(2)}/oz`, cash_balance: updated.cash_balance });
 });
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// ASSET CATALOGUE — unified list of everything tradeable in a game
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Returns all asset classes available in this game with live prices.
+// Stocks are dynamically searchable (no fixed universe), so this returns
+// guidance + endpoints rather than a full ticker list.
+// Metals and futures are fixed catalogues — returned with live prices.
+app.get('/api/games/:gameId/assets', requireAuth, loadGame, async (req, res) => {
+  const game = req.game;
+  const base  = `/api/games/${game.id}`;
+
+  // Fetch metals and futures prices in parallel, skip if not enabled
+  const [metalsResult, futuresResult] = await Promise.allSettled([
+    game.allow_metals
+      ? Promise.all(PRECIOUS_METALS.map(async m => {
+          try {
+            const q = await getQuote(m.symbol);
+            return { ...m, price: q.price, change: q.change, change_percent: q.changePercent, market_state: q.marketState };
+          } catch {
+            return { ...m, price: null, change: 0, change_percent: 0, market_state: 'CLOSED' };
+          }
+        }))
+      : Promise.resolve(null),
+
+    game.allow_futures
+      ? Promise.all(FUTURES_CONTRACTS.map(async c => {
+          try {
+            const q = await getQuote(c.symbol);
+            return { ...c, price: q.price, change: q.change, change_percent: q.changePercent, market_state: q.marketState };
+          } catch {
+            return { ...c, price: null, change: 0, change_percent: 0, market_state: 'CLOSED' };
+          }
+        }))
+      : Promise.resolve(null),
+  ]);
+
+  const metals  = metalsResult.status  === 'fulfilled' ? metalsResult.value  : null;
+  const futures = futuresResult.status === 'fulfilled' ? futuresResult.value : null;
+
+  res.json({
+    game: {
+      id:               game.id,
+      title:            game.title,
+      status:           game.status,
+      starting_cash:    game.starting_cash,
+      allow_fractional: !!game.allow_fractional,
+      allow_futures:    !!game.allow_futures,
+      allow_metals:     !!game.allow_metals,
+      markets:          game.markets,
+    },
+
+    stocks: {
+      description: 'Any stock listed on the allowed exchanges. Use the search endpoint to find symbols, then the quote endpoint for live prices.',
+      allowed_markets: game.markets,
+      allow_fractional: !!game.allow_fractional,
+      endpoints: {
+        search:      '/api/stocks/search?q=<symbol_or_name>',
+        quote:       '/api/stocks/quote/:symbol',
+        chart:       '/api/stocks/chart/:symbol',
+        buy:         `${base}/orders  POST  { symbol, type:"buy",  order_type:"market"|"limit", shares, limit_price? }`,
+        sell:        `${base}/orders  POST  { symbol, type:"sell", order_type:"market"|"limit", shares, limit_price? }`,
+        orders:      `${base}/orders  GET`,
+        cancel:      `${base}/orders/:orderId  DELETE`,
+      },
+    },
+
+    precious_metals: metals
+      ? {
+          description: 'Spot precious metals priced per troy ounce. Trade 24/5 — no market-hours restriction.',
+          unit: 'troy oz',
+          assets: metals,
+          endpoints: {
+            list:  '/api/metals/list',
+            buy:   `${base}/metals/buy  POST  { symbol, oz }`,
+            sell:  `${base}/metals/sell  POST  { symbol, oz }`,
+          },
+        }
+      : { enabled: false },
+
+    futures: futures
+      ? {
+          description: 'Margin-based futures contracts. P&L = contracts × (exit − entry). Margin rate applies.',
+          margin_rate:  game.futures_margin,
+          assets: futures,
+          endpoints: {
+            list:      '/api/futures/contracts',
+            positions: `${base}/futures/positions  GET`,
+            open:      `${base}/futures/open   POST  { symbol, direction:"long"|"short", contracts }`,
+            close:     `${base}/futures/close  POST  { symbol, contracts }`,
+            history:   `${base}/futures/history  GET`,
+          },
+        }
+      : { enabled: false },
+  });
+});
+
 // Delete a game and all associated data
 app.delete('/api/games/:gameId', requireAdmin, loadGame, (req, res) => {
   const { id, title } = req.game;
