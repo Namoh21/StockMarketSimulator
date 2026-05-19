@@ -1516,7 +1516,8 @@ const App = (() => {
       try {
         const orders = await api('GET', `/api/games/${currentGameId}/orders`);
         const pending = orders.filter(o => o.status === 'pending');
-        const recent  = orders.filter(o => o.status !== 'pending').slice(0, 5);
+        const cutoff  = Date.now() - 2 * 60 * 1000; // 2-min window for fill confirmations
+        const recent  = orders.filter(o => o.status !== 'pending' && o.filled_at && new Date(o.filled_at.includes('T') ? o.filled_at : o.filled_at.replace(' ','T')+'Z').getTime() > cutoff);
         const allShow = [...pending, ...recent];
         const poCard  = document.getElementById('pending-orders-card');
         poCard.style.display = allShow.length ? '' : 'none';
@@ -1548,7 +1549,7 @@ const App = (() => {
             </tr>`;
           };
           const divider = pending.length && recent.length
-            ? `<tr><td colspan="8" style="padding:6px 10px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;background:var(--bg3)">Recent (filled / cancelled)</td></tr>`
+            ? `<tr><td colspan="8" style="padding:6px 10px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;background:var(--bg3)">Just filled / cancelled</td></tr>`
             : '';
           poBody.innerHTML = pending.map(o => makeRow(o, true)).join('') + divider + recent.map(o => makeRow(o, false)).join('');
         }
