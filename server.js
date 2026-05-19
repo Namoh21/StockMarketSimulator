@@ -1,3 +1,5 @@
+import { execSync } from 'child_process';
+import { existsSync as fs_existsSync } from 'fs';
 import compression from 'compression';
 import express from 'express';
 import bcrypt from 'bcryptjs';
@@ -274,6 +276,17 @@ const FUTURES_CONTRACTS = [
   { symbol: '6J=F',  name: 'Japanese Yen',         category: 'Currency', description: 'Japanese Yen vs US dollar' },
   { symbol: 'BTC=F', name: 'Bitcoin Futures',      category: 'Crypto',   description: 'CME Bitcoin futures contract' },
 ];
+
+// ── Precious metals spot catalogue ───────────────────────────────────────────
+// Uses nearby futures symbols as spot price proxies (COMEX/NYMEX).
+// Metals trade 24/5 — no US market-hours restriction applied.
+const PRECIOUS_METALS = [
+  { symbol: 'GC=F', name: 'Gold',      unit: 'oz', description: 'COMEX gold per troy ounce' },
+  { symbol: 'SI=F', name: 'Silver',    unit: 'oz', description: 'COMEX silver per troy ounce' },
+  { symbol: 'PL=F', name: 'Platinum',  unit: 'oz', description: 'NYMEX platinum per troy ounce' },
+  { symbol: 'PA=F', name: 'Palladium', unit: 'oz', description: 'NYMEX palladium per troy ounce' },
+];
+const METAL_SYMBOLS = new Set(PRECIOUS_METALS.map(m => m.symbol));
 
 // ── US Market hours (America/New_York) ───────────────────────────────────────
 function getEasternParts() {
@@ -585,7 +598,7 @@ app.get('/api/games', requireAuth, (req, res) => {
 });
 
 app.post('/api/games', requireAdmin, (req, res) => {
-  const { title, start_date, end_date, starting_cash, markets, allow_fractional, allow_futures, futures_margin, is_private, join_password } = req.body || {};
+  const { title, start_date, end_date, starting_cash, markets, allow_fractional, allow_futures, futures_margin, allow_metals, is_private, join_password } = req.body || {};
   if (!start_date || !end_date || !starting_cash)
     return res.status(400).json({ error: 'start_date, end_date, and starting_cash are required' });
   if (new Date(end_date) <= new Date(start_date))
@@ -600,8 +613,8 @@ app.post('/api/games', requireAdmin, (req, res) => {
     return res.status(400).json({ error: 'A join password is required for private games' });
 
   const { lastInsertRowid } = db.prepare(
-    `INSERT INTO game_config (title, start_date, end_date, starting_cash, markets, allow_fractional, allow_futures, futures_margin, is_active, is_private, join_password)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
+    `INSERT INTO game_config (title, start_date, end_date, starting_cash, markets, allow_fractional, allow_futures, futures_margin, allow_metals, is_active, is_private, join_password)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
   ).run(
     title?.trim() || 'Stock Trading Game',
     start_date, end_date, starting_cash,
@@ -609,6 +622,7 @@ app.post('/api/games', requireAdmin, (req, res) => {
     allow_fractional ? 1 : 0,
     allow_futures    ? 1 : 0,
     parseFloat(futures_margin) || 0.20,
+    allow_metals     ? 1 : 0,
     priv,
     priv ? encryptField(join_password.trim()) : null  // stored encrypted
   );
@@ -665,6 +679,7 @@ app.put('/api/games/:gameId', requireAdmin, loadGame, (req, res) => {
        allow_fractional = ?,
        allow_futures    = ?,
        futures_margin   = ?,
+       allow_metals     = ?,
        is_active        = ?,
        is_private       = ?,
        join_password    = ?
@@ -678,6 +693,7 @@ app.put('/api/games/:gameId', requireAdmin, loadGame, (req, res) => {
     body.allow_fractional !== undefined ? (body.allow_fractional ? 1 : 0) : game.allow_fractional,
     body.allow_futures    !== undefined ? (body.allow_futures    ? 1 : 0) : game.allow_futures,
     body.futures_margin   != null       ? parseFloat(body.futures_margin) : game.futures_margin,
+    body.allow_metals     !== undefined ? (body.allow_metals     ? 1 : 0) : game.allow_metals,
     body.is_active        !== undefined ? (body.is_active ? 1 : 0)        : game.is_active,
     newPrivate,
     newPassword,
@@ -1196,6 +1212,80 @@ app.get('/api/games/:gameId/futures/history', requireAuth, loadGame, (req, res) 
   res.json(db.prepare('SELECT * FROM futures_transactions WHERE user_id = ? AND game_id = ? ORDER BY executed_at DESC LIMIT 200').all(req.user.id, req.game.id));
 });
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// PRECIOUS METALS (per game)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+app.get('/api/metals/list', requireAuth, async (req, res) => {
+  const enriched = await Promise.all(PRECIOUS_METALS.map(async m => {
+    try {
+      const q = await getQuote(m.symbol);
+      return { ...m, price: q.price, change: q.change, changePercent: q.changePercent, marketState: q.marketState };
+    } catch {
+      return { ...m, price: null, change: 0, changePercent: 0, marketState: 'CLOSED' };
+    }
+  }));
+  res.json(enriched);
+});
+
+app.post('/api/games/:gameId/metals/buy', requireAuth, loadGame, async (req, res) => {
+  const game = req.game;
+  if (!game.allow_metals) return res.status(400).json({ error: 'Precious metals trading is not enabled in this game' });
+  if (game.status === 'pending') return res.status(400).json({ error: 'Game has not started yet' });
+  if (game.status === 'ended')   return res.status(400).json({ error: 'Game has ended — no more trades' });
+
+  let { symbol, oz } = req.body || {};
+  symbol = symbol?.toUpperCase(); oz = parseFloat(oz);
+  if (!symbol || isNaN(oz) || oz <= 0) return res.status(400).json({ error: 'symbol and positive oz are required' });
+  if (!validSymbol(symbol)) return res.status(400).json({ error: 'Invalid symbol format' });
+  if (!validShares(oz))     return res.status(400).json({ error: 'Quantity must be between 0 and 1,000,000' });
+
+  const metal = PRECIOUS_METALS.find(m => m.symbol === symbol);
+  if (!metal) return res.status(400).json({ error: `${symbol} is not a supported precious metal` });
+
+  let quote;
+  try { quote = await getQuote(symbol); } catch { return res.status(400).json({ error: 'Unable to fetch price — market data unavailable' }); }
+
+  const portfolio = ensurePortfolio(req.user.id, game.id, game.starting_cash);
+  const cost = +(quote.price * oz).toFixed(6);
+  if (!validTotal(cost)) return res.status(400).json({ error: 'Invalid cost calculation' });
+  const avail = availableCash(req.user.id, game.id, portfolio);
+  if (cost > avail) return res.status(400).json({ error: `Insufficient funds — cost $${cost.toFixed(2)}, available $${avail.toFixed(2)}` });
+
+  applyFill(req.user.id, game.id, symbol, metal.name, 'buy', oz, quote.price);
+  const updated = db.prepare('SELECT * FROM portfolios WHERE user_id = ? AND game_id = ?').get(req.user.id, game.id);
+  audit(req, 'METALS_BUY', `${oz} oz ${metal.name} @ $${quote.price.toFixed(2)}`);
+  res.json({ filled: true, message: `Bought ${oz} oz of ${metal.name} at $${quote.price.toFixed(2)}/oz`, cash_balance: updated.cash_balance, total_cost: cost });
+});
+
+app.post('/api/games/:gameId/metals/sell', requireAuth, loadGame, async (req, res) => {
+  const game = req.game;
+  if (!game.allow_metals) return res.status(400).json({ error: 'Precious metals trading is not enabled in this game' });
+  if (game.status === 'pending') return res.status(400).json({ error: 'Game has not started yet' });
+  if (game.status === 'ended')   return res.status(400).json({ error: 'Game has ended' });
+
+  let { symbol, oz } = req.body || {};
+  symbol = symbol?.toUpperCase(); oz = parseFloat(oz);
+  if (!symbol || isNaN(oz) || oz <= 0) return res.status(400).json({ error: 'symbol and positive oz are required' });
+  if (!validSymbol(symbol)) return res.status(400).json({ error: 'Invalid symbol format' });
+  if (!validShares(oz))     return res.status(400).json({ error: 'Quantity must be between 0 and 1,000,000' });
+
+  const metal = PRECIOUS_METALS.find(m => m.symbol === symbol);
+  if (!metal) return res.status(400).json({ error: `${symbol} is not a supported precious metal` });
+
+  const holding = db.prepare('SELECT * FROM holdings WHERE user_id = ? AND game_id = ? AND symbol = ?').get(req.user.id, game.id, symbol);
+  if (!holding || holding.shares < oz - 0.000001)
+    return res.status(400).json({ error: `Insufficient — you own ${holding ? holding.shares.toFixed(6) : 0} oz of ${metal.name}` });
+
+  let quote;
+  try { quote = await getQuote(symbol); } catch { return res.status(400).json({ error: 'Unable to fetch price — market data unavailable' }); }
+
+  applyFill(req.user.id, game.id, symbol, metal.name, 'sell', oz, quote.price);
+  const updated = db.prepare('SELECT * FROM portfolios WHERE user_id = ? AND game_id = ?').get(req.user.id, game.id);
+  audit(req, 'METALS_SELL', `${oz} oz ${metal.name} @ $${quote.price.toFixed(2)}`);
+  res.json({ filled: true, message: `Sold ${oz} oz of ${metal.name} at $${quote.price.toFixed(2)}/oz`, cash_balance: updated.cash_balance });
+});
+
 // Delete a game and all associated data
 app.delete('/api/games/:gameId', requireAdmin, loadGame, (req, res) => {
   const { id, title } = req.game;
@@ -1478,6 +1568,100 @@ setInterval(async () => {
   await processAllPendingOrders();
   await maybeRunDailyEmails();
 }, 60_000);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SOFTWARE UPDATE (admin only)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function gitRun(cmd) {
+  return execSync(`git -C "${__dirname}" ${cmd}`, { encoding: 'utf8', timeout: 30_000 }).trim();
+}
+
+// Check if there are updates available (runs git fetch)
+app.get('/api/admin/update/status', requireAdmin, (req, res) => {
+  try {
+    if (!fs_existsSync(path.join(__dirname, '.git')))
+      return res.status(400).json({ error: 'Not a git repository — auto-update unavailable' });
+    gitRun('fetch origin --quiet');
+    const branch     = gitRun('rev-parse --abbrev-ref HEAD');
+    const currentSha = gitRun('rev-parse HEAD');
+    const remoteSha  = gitRun(`rev-parse origin/${branch}`);
+    const upToDate   = currentSha === remoteSha;
+    const changelog  = upToDate ? [] : gitRun(`log --oneline HEAD..origin/${branch}`).split('\n').filter(Boolean).slice(0, 30);
+    res.json({ up_to_date: upToDate, current_short: currentSha.slice(0, 7), remote_short: remoteSha.slice(0, 7), branch, changelog });
+  } catch (err) {
+    res.status(500).json({ error: `Git check failed: ${err.message.split('\n')[0]}` });
+  }
+});
+
+// Apply update via SSE stream — EventSource can't set headers so we accept JWT in query string
+app.get('/api/admin/update/apply', (req, res) => {
+  // Manually validate the JWT from query string
+  const raw = req.query.token;
+  if (!raw) return res.status(401).end();
+  let payload;
+  try { payload = jwt.verify(raw, JWT_SECRET); } catch { return res.status(401).end(); }
+  if (isBlacklisted(payload.jti)) return res.status(401).end();
+  const dbUser = db.prepare('SELECT username, is_admin FROM users WHERE id = ?').get(payload.id);
+  if (!dbUser?.is_admin) return res.status(403).end();
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const send = (type, data) => { try { res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`); } catch {} };
+  const log  = msg  => send('log', { msg });
+  const done = (ok, msg) => { send('done', { success: ok, msg }); res.end(); };
+
+  console.log(`[AUDIT] ${new Date().toISOString()} ${dbUser.username} — APPLY_UPDATE`);
+
+  try {
+    if (!fs_existsSync(path.join(__dirname, '.git')))
+      return done(false, 'Not a git repository — cannot update');
+
+    const branch     = gitRun('rev-parse --abbrev-ref HEAD');
+    const currentSha = gitRun('rev-parse HEAD');
+    log(`Current version : ${currentSha.slice(0, 7)}  (branch: ${branch})`);
+
+    log('Fetching latest code from GitHub…');
+    gitRun('fetch origin --quiet');
+
+    const remoteSha = gitRun(`rev-parse origin/${branch}`);
+    if (currentSha === remoteSha) {
+      return done(true, 'Already up to date — no restart needed.');
+    }
+
+    const changelog = gitRun(`log --oneline HEAD..origin/${branch}`).split('\n').filter(Boolean);
+    log(`${changelog.length} new commit${changelog.length !== 1 ? 's' : ''}:`);
+    changelog.forEach(line => log(`  ${line}`));
+
+    log(`\nApplying update…`);
+    gitRun(`reset --hard origin/${branch}`);
+    const newSha = gitRun('rev-parse --short HEAD');
+    log(`Updated to ${newSha}`);
+
+    // Re-install deps only if package.json changed
+    try {
+      const changed = gitRun(`diff --name-only ${currentSha} HEAD`);
+      if (changed.includes('package.json')) {
+        log('package.json changed — running npm install…');
+        execSync('npm install --omit=dev --silent', { cwd: __dirname, timeout: 120_000, encoding: 'utf8' });
+        log('Dependencies updated.');
+      } else {
+        log('Dependencies unchanged — skipping npm install.');
+      }
+    } catch (npmErr) {
+      log(`Warning: npm install failed — ${npmErr.message.split('\n')[0]}`);
+    }
+
+    log('\nRestarting server…');
+    done(true, `Updated to ${newSha}. Server is restarting — reconnect in a few seconds.`);
+    setTimeout(() => process.exit(0), 500);
+  } catch (err) {
+    done(false, `Update failed: ${err.message.split('\n')[0]}`);
+  }
+});
 
 // ── Catch-all → SPA ──────────────────────────────────────────────────────────
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
