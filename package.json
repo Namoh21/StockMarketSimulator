@@ -5,7 +5,8 @@
   "main": "server.js",
   "type": "module",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "reset-password": "node reset-password.js"
   },
   "engines": {
     "node": ">=18.0.0"
