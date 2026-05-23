@@ -261,20 +261,49 @@ async function getQuote(symbol) {
 // multiplier = 1 (simulation units) so margin is accessible at any starting cash.
 // Admin sets the margin rate (default 20%). P&L = contracts × (exit − entry) for long.
 const FUTURES_CONTRACTS = [
-  { symbol: 'ES=F',  name: 'S&P 500 E-mini',      category: 'Index',    description: 'Tracks the S&P 500 large-cap index' },
-  { symbol: 'NQ=F',  name: 'NASDAQ 100 E-mini',    category: 'Index',    description: 'Tracks the NASDAQ 100 tech index' },
-  { symbol: 'YM=F',  name: 'Dow Jones E-mini',     category: 'Index',    description: 'Tracks the 30-stock Dow Jones average' },
-  { symbol: 'RTY=F', name: 'Russell 2000 E-mini',  category: 'Index',    description: 'Tracks small-cap US stocks' },
-  { symbol: 'CL=F',  name: 'Crude Oil (WTI)',      category: 'Energy',   description: 'West Texas Intermediate crude oil per barrel' },
-  { symbol: 'NG=F',  name: 'Natural Gas',          category: 'Energy',   description: 'Henry Hub natural gas per MMBtu' },
-  { symbol: 'GC=F',  name: 'Gold',                 category: 'Metals',   description: 'COMEX gold per troy ounce' },
-  { symbol: 'SI=F',  name: 'Silver',               category: 'Metals',   description: 'COMEX silver per troy ounce' },
-  { symbol: 'HG=F',  name: 'Copper',               category: 'Metals',   description: 'COMEX copper per pound' },
-  { symbol: 'ZB=F',  name: '30-Year T-Bond',       category: 'Rates',    description: 'US Treasury Bond futures' },
-  { symbol: 'ZN=F',  name: '10-Year T-Note',       category: 'Rates',    description: 'US Treasury Note futures' },
-  { symbol: '6E=F',  name: 'Euro / USD',           category: 'Currency', description: 'Euro currency vs US dollar' },
-  { symbol: '6J=F',  name: 'Japanese Yen',         category: 'Currency', description: 'Japanese Yen vs US dollar' },
-  { symbol: 'BTC=F', name: 'Bitcoin Futures',      category: 'Crypto',   description: 'CME Bitcoin futures contract' },
+  // Index
+  { symbol: 'ES=F',  name: 'S&P 500 E-mini',      category: 'Index',        description: 'Tracks the S&P 500 large-cap index' },
+  { symbol: 'NQ=F',  name: 'NASDAQ 100 E-mini',    category: 'Index',        description: 'Tracks the NASDAQ 100 tech index' },
+  { symbol: 'YM=F',  name: 'Dow Jones E-mini',     category: 'Index',        description: 'Tracks the 30-stock Dow Jones average' },
+  { symbol: 'RTY=F', name: 'Russell 2000 E-mini',  category: 'Index',        description: 'Tracks small-cap US stocks' },
+  // Energy
+  { symbol: 'CL=F',  name: 'Crude Oil (WTI)',      category: 'Energy',       description: 'West Texas Intermediate crude oil per barrel' },
+  { symbol: 'BZ=F',  name: 'Crude Oil (Brent)',    category: 'Energy',       description: 'North Sea Brent crude oil per barrel' },
+  { symbol: 'NG=F',  name: 'Natural Gas',          category: 'Energy',       description: 'Henry Hub natural gas per MMBtu' },
+  { symbol: 'RB=F',  name: 'RBOB Gasoline',        category: 'Energy',       description: 'Reformulated gasoline blendstock per gallon' },
+  { symbol: 'HO=F',  name: 'Heating Oil',          category: 'Energy',       description: 'No. 2 heating oil per gallon' },
+  // Metals
+  { symbol: 'GC=F',  name: 'Gold',                 category: 'Metals',       description: 'COMEX gold per troy ounce' },
+  { symbol: 'SI=F',  name: 'Silver',               category: 'Metals',       description: 'COMEX silver per troy ounce' },
+  { symbol: 'HG=F',  name: 'Copper',               category: 'Metals',       description: 'COMEX copper per pound' },
+  { symbol: 'PL=F',  name: 'Platinum',             category: 'Metals',       description: 'NYMEX platinum per troy ounce' },
+  { symbol: 'PA=F',  name: 'Palladium',            category: 'Metals',       description: 'NYMEX palladium per troy ounce' },
+  // Agricultural
+  { symbol: 'ZC=F',  name: 'Corn',                 category: 'Agricultural', description: 'CBOT corn per bushel' },
+  { symbol: 'ZW=F',  name: 'Wheat',                category: 'Agricultural', description: 'CBOT wheat per bushel' },
+  { symbol: 'ZS=F',  name: 'Soybeans',             category: 'Agricultural', description: 'CBOT soybeans per bushel' },
+  { symbol: 'ZM=F',  name: 'Soybean Meal',         category: 'Agricultural', description: 'CBOT soybean meal per short ton' },
+  { symbol: 'ZL=F',  name: 'Soybean Oil',          category: 'Agricultural', description: 'CBOT soybean oil per pound' },
+  { symbol: 'KC=F',  name: 'Coffee',               category: 'Agricultural', description: 'ICE Coffee C per pound' },
+  { symbol: 'CT=F',  name: 'Cotton',               category: 'Agricultural', description: 'ICE Cotton No. 2 per pound' },
+  { symbol: 'SB=F',  name: 'Sugar',                category: 'Agricultural', description: 'ICE Sugar No. 11 per pound' },
+  { symbol: 'CC=F',  name: 'Cocoa',                category: 'Agricultural', description: 'ICE Cocoa per metric ton' },
+  { symbol: 'LE=F',  name: 'Live Cattle',          category: 'Agricultural', description: 'CME live cattle per pound' },
+  { symbol: 'HE=F',  name: 'Lean Hogs',            category: 'Agricultural', description: 'CME lean hogs per pound' },
+  // Rates
+  { symbol: 'ZB=F',  name: '30-Year T-Bond',       category: 'Rates',        description: 'US Treasury Bond futures' },
+  { symbol: 'ZN=F',  name: '10-Year T-Note',       category: 'Rates',        description: 'US Treasury Note futures' },
+  { symbol: 'ZF=F',  name: '5-Year T-Note',        category: 'Rates',        description: 'US 5-Year Treasury Note futures' },
+  { symbol: 'ZT=F',  name: '2-Year T-Note',        category: 'Rates',        description: 'US 2-Year Treasury Note futures' },
+  // Currency
+  { symbol: '6E=F',  name: 'Euro / USD',           category: 'Currency',     description: 'Euro currency vs US dollar' },
+  { symbol: '6J=F',  name: 'Japanese Yen',         category: 'Currency',     description: 'Japanese Yen vs US dollar' },
+  { symbol: '6B=F',  name: 'British Pound',        category: 'Currency',     description: 'British Pound vs US dollar' },
+  { symbol: '6C=F',  name: 'Canadian Dollar',      category: 'Currency',     description: 'Canadian Dollar vs US dollar' },
+  { symbol: '6A=F',  name: 'Australian Dollar',    category: 'Currency',     description: 'Australian Dollar vs US dollar' },
+  { symbol: '6S=F',  name: 'Swiss Franc',          category: 'Currency',     description: 'Swiss Franc vs US dollar' },
+  // Crypto
+  { symbol: 'BTC=F', name: 'Bitcoin Futures',      category: 'Crypto',       description: 'CME Bitcoin futures contract' },
 ];
 
 // ── Precious metals spot catalogue ───────────────────────────────────────────
@@ -287,6 +316,44 @@ const PRECIOUS_METALS = [
   { symbol: 'PA=F', name: 'Palladium', unit: 'oz', description: 'NYMEX palladium per troy ounce' },
 ];
 const METAL_SYMBOLS = new Set(PRECIOUS_METALS.map(m => m.symbol));
+
+// ── Forex spot pairs ──────────────────────────────────────────────────────────
+const FOREX_PAIRS = [
+  { symbol: 'EURUSD=X', name: 'EUR/USD', category: 'Majors',   description: 'Euro vs US Dollar' },
+  { symbol: 'GBPUSD=X', name: 'GBP/USD', category: 'Majors',   description: 'British Pound vs US Dollar' },
+  { symbol: 'USDJPY=X', name: 'USD/JPY', category: 'Majors',   description: 'US Dollar vs Japanese Yen' },
+  { symbol: 'USDCHF=X', name: 'USD/CHF', category: 'Majors',   description: 'US Dollar vs Swiss Franc' },
+  { symbol: 'USDCAD=X', name: 'USD/CAD', category: 'Majors',   description: 'US Dollar vs Canadian Dollar' },
+  { symbol: 'AUDUSD=X', name: 'AUD/USD', category: 'Majors',   description: 'Australian Dollar vs US Dollar' },
+  { symbol: 'NZDUSD=X', name: 'NZD/USD', category: 'Majors',   description: 'New Zealand Dollar vs US Dollar' },
+  { symbol: 'EURGBP=X', name: 'EUR/GBP', category: 'Crosses',  description: 'Euro vs British Pound' },
+  { symbol: 'EURJPY=X', name: 'EUR/JPY', category: 'Crosses',  description: 'Euro vs Japanese Yen' },
+  { symbol: 'GBPJPY=X', name: 'GBP/JPY', category: 'Crosses',  description: 'British Pound vs Japanese Yen' },
+  { symbol: 'USDMXN=X', name: 'USD/MXN', category: 'Emerging', description: 'US Dollar vs Mexican Peso' },
+  { symbol: 'USDINR=X', name: 'USD/INR', category: 'Emerging', description: 'US Dollar vs Indian Rupee' },
+  { symbol: 'USDCNY=X', name: 'USD/CNY', category: 'Emerging', description: 'US Dollar vs Chinese Yuan' },
+  { symbol: 'USDBRL=X', name: 'USD/BRL', category: 'Emerging', description: 'US Dollar vs Brazilian Real' },
+];
+const FOREX_SYMBOLS = new Set(FOREX_PAIRS.map(f => f.symbol));
+
+// ── Crypto spot assets ────────────────────────────────────────────────────────
+const CRYPTO_ASSETS = [
+  { symbol: 'BTC-USD',  name: 'Bitcoin',   description: 'The original proof-of-work cryptocurrency' },
+  { symbol: 'ETH-USD',  name: 'Ethereum',  description: 'Smart contract and DeFi platform' },
+  { symbol: 'SOL-USD',  name: 'Solana',    description: 'High-throughput proof-of-stake blockchain' },
+  { symbol: 'BNB-USD',  name: 'BNB',       description: 'Binance exchange native token' },
+  { symbol: 'XRP-USD',  name: 'XRP',       description: 'Cross-border payment settlement network' },
+  { symbol: 'ADA-USD',  name: 'Cardano',   description: 'Peer-reviewed proof-of-stake blockchain' },
+  { symbol: 'DOGE-USD', name: 'Dogecoin',  description: 'Original meme-based cryptocurrency' },
+  { symbol: 'AVAX-USD', name: 'Avalanche', description: 'Fast finality smart contract platform' },
+  { symbol: 'LTC-USD',  name: 'Litecoin',  description: 'Early peer-to-peer digital currency' },
+  { symbol: 'DOT-USD',  name: 'Polkadot',  description: 'Multi-chain interoperability protocol' },
+  { symbol: 'LINK-USD', name: 'Chainlink', description: 'Decentralized oracle data network' },
+];
+const CRYPTO_SYMBOLS = new Set(CRYPTO_ASSETS.map(c => c.symbol));
+
+// Combined set of all non-stock spot symbols (used for portfolio filtering)
+const ALL_SPOT_SYMBOLS = new Set([...METAL_SYMBOLS, ...FOREX_SYMBOLS, ...CRYPTO_SYMBOLS]);
 
 // ── US Market hours (America/New_York) ───────────────────────────────────────
 function getEasternParts() {
@@ -598,7 +665,7 @@ app.get('/api/games', requireAuth, (req, res) => {
 });
 
 app.post('/api/games', requireAdmin, (req, res) => {
-  const { title, start_date, end_date, starting_cash, markets, allow_fractional, allow_futures, futures_margin, allow_metals, is_private, join_password } = req.body || {};
+  const { title, start_date, end_date, starting_cash, markets, allow_fractional, allow_futures, futures_margin, allow_metals, allow_forex, allow_crypto, is_private, join_password } = req.body || {};
   if (!start_date || !end_date || !starting_cash)
     return res.status(400).json({ error: 'start_date, end_date, and starting_cash are required' });
   if (new Date(end_date) <= new Date(start_date))
@@ -613,8 +680,8 @@ app.post('/api/games', requireAdmin, (req, res) => {
     return res.status(400).json({ error: 'A join password is required for private games' });
 
   const { lastInsertRowid } = db.prepare(
-    `INSERT INTO game_config (title, start_date, end_date, starting_cash, markets, allow_fractional, allow_futures, futures_margin, allow_metals, is_active, is_private, join_password)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
+    `INSERT INTO game_config (title, start_date, end_date, starting_cash, markets, allow_fractional, allow_futures, futures_margin, allow_metals, allow_forex, allow_crypto, is_active, is_private, join_password)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
   ).run(
     title?.trim() || 'Stock Trading Game',
     start_date, end_date, starting_cash,
@@ -623,6 +690,8 @@ app.post('/api/games', requireAdmin, (req, res) => {
     allow_futures    ? 1 : 0,
     parseFloat(futures_margin) || 0.20,
     allow_metals     ? 1 : 0,
+    allow_forex      ? 1 : 0,
+    allow_crypto     ? 1 : 0,
     priv,
     priv ? encryptField(join_password.trim()) : null  // stored encrypted
   );
@@ -680,6 +749,8 @@ app.put('/api/games/:gameId', requireAdmin, loadGame, (req, res) => {
        allow_futures    = ?,
        futures_margin   = ?,
        allow_metals     = ?,
+       allow_forex      = ?,
+       allow_crypto     = ?,
        is_active        = ?,
        is_private       = ?,
        join_password    = ?
@@ -694,6 +765,8 @@ app.put('/api/games/:gameId', requireAdmin, loadGame, (req, res) => {
     body.allow_futures    !== undefined ? (body.allow_futures    ? 1 : 0) : game.allow_futures,
     body.futures_margin   != null       ? parseFloat(body.futures_margin) : game.futures_margin,
     body.allow_metals     !== undefined ? (body.allow_metals     ? 1 : 0) : game.allow_metals,
+    body.allow_forex      !== undefined ? (body.allow_forex      ? 1 : 0) : game.allow_forex,
+    body.allow_crypto     !== undefined ? (body.allow_crypto     ? 1 : 0) : game.allow_crypto,
     body.is_active        !== undefined ? (body.is_active ? 1 : 0)        : game.is_active,
     newPrivate,
     newPassword,
@@ -1286,6 +1359,150 @@ app.post('/api/games/:gameId/metals/sell', requireAuth, loadGame, async (req, re
   res.json({ filled: true, message: `Sold ${oz} oz of ${metal.name} at $${quote.price.toFixed(2)}/oz`, cash_balance: updated.cash_balance });
 });
 
+// ─── Forex ───────────────────────────────────────────────────────────────────
+
+app.get('/api/forex/list', requireAuth, async (req, res) => {
+  const enriched = await Promise.all(FOREX_PAIRS.map(async f => {
+    try {
+      const q = await getQuote(f.symbol);
+      return { ...f, price: q.price, change: q.change, changePercent: q.changePercent, marketState: q.marketState };
+    } catch {
+      return { ...f, price: null, change: 0, changePercent: 0, marketState: 'CLOSED' };
+    }
+  }));
+  res.json(enriched);
+});
+
+app.post('/api/games/:gameId/forex/buy', requireAuth, loadGame, async (req, res) => {
+  const game = req.game;
+  if (!game.allow_forex)         return res.status(400).json({ error: 'Forex trading is not enabled in this game' });
+  if (game.status === 'pending') return res.status(400).json({ error: 'Game has not started yet' });
+  if (game.status === 'ended')   return res.status(400).json({ error: 'Game has ended — no more trades' });
+
+  let { symbol, quantity } = req.body || {};
+  symbol = symbol?.toUpperCase(); quantity = parseFloat(quantity);
+  if (!symbol || isNaN(quantity) || quantity <= 0) return res.status(400).json({ error: 'symbol and positive quantity are required' });
+  if (!validSymbol(symbol)) return res.status(400).json({ error: 'Invalid symbol format' });
+  if (!validShares(quantity)) return res.status(400).json({ error: 'Quantity must be between 0 and 1,000,000' });
+
+  const pair = FOREX_PAIRS.find(f => f.symbol === symbol);
+  if (!pair) return res.status(400).json({ error: `${symbol} is not a supported forex pair` });
+
+  let quote;
+  try { quote = await getQuote(symbol); } catch { return res.status(400).json({ error: 'Unable to fetch price — market data unavailable' }); }
+
+  const portfolio = ensurePortfolio(req.user.id, game.id, game.starting_cash);
+  const cost = +(quote.price * quantity).toFixed(6);
+  if (!validTotal(cost)) return res.status(400).json({ error: 'Invalid cost calculation' });
+  const avail = availableCash(req.user.id, game.id, portfolio);
+  if (cost > avail) return res.status(400).json({ error: `Insufficient funds — cost $${cost.toFixed(2)}, available $${avail.toFixed(2)}` });
+
+  applyFill(req.user.id, game.id, symbol, pair.name, 'buy', quantity, quote.price);
+  const updated = db.prepare('SELECT * FROM portfolios WHERE user_id = ? AND game_id = ?').get(req.user.id, game.id);
+  audit(req, 'FOREX_BUY', `${quantity} units ${pair.name} @ ${quote.price.toFixed(5)}`);
+  res.json({ filled: true, message: `Bought ${quantity} units of ${pair.name} at ${quote.price.toFixed(5)}`, cash_balance: updated.cash_balance, total_cost: cost });
+});
+
+app.post('/api/games/:gameId/forex/sell', requireAuth, loadGame, async (req, res) => {
+  const game = req.game;
+  if (!game.allow_forex)         return res.status(400).json({ error: 'Forex trading is not enabled in this game' });
+  if (game.status === 'pending') return res.status(400).json({ error: 'Game has not started yet' });
+  if (game.status === 'ended')   return res.status(400).json({ error: 'Game has ended' });
+
+  let { symbol, quantity } = req.body || {};
+  symbol = symbol?.toUpperCase(); quantity = parseFloat(quantity);
+  if (!symbol || isNaN(quantity) || quantity <= 0) return res.status(400).json({ error: 'symbol and positive quantity are required' });
+  if (!validSymbol(symbol)) return res.status(400).json({ error: 'Invalid symbol format' });
+  if (!validShares(quantity)) return res.status(400).json({ error: 'Quantity must be between 0 and 1,000,000' });
+
+  const pair = FOREX_PAIRS.find(f => f.symbol === symbol);
+  if (!pair) return res.status(400).json({ error: `${symbol} is not a supported forex pair` });
+
+  const holding = db.prepare('SELECT * FROM holdings WHERE user_id = ? AND game_id = ? AND symbol = ?').get(req.user.id, game.id, symbol);
+  if (!holding || holding.shares < quantity - 0.000001)
+    return res.status(400).json({ error: `Insufficient — you own ${holding ? holding.shares.toFixed(2) : 0} units of ${pair.name}` });
+
+  let quote;
+  try { quote = await getQuote(symbol); } catch { return res.status(400).json({ error: 'Unable to fetch price — market data unavailable' }); }
+
+  applyFill(req.user.id, game.id, symbol, pair.name, 'sell', quantity, quote.price);
+  const updated = db.prepare('SELECT * FROM portfolios WHERE user_id = ? AND game_id = ?').get(req.user.id, game.id);
+  audit(req, 'FOREX_SELL', `${quantity} units ${pair.name} @ ${quote.price.toFixed(5)}`);
+  res.json({ filled: true, message: `Sold ${quantity} units of ${pair.name} at ${quote.price.toFixed(5)}`, cash_balance: updated.cash_balance });
+});
+
+// ─── Crypto ───────────────────────────────────────────────────────────────────
+
+app.get('/api/crypto/list', requireAuth, async (req, res) => {
+  const enriched = await Promise.all(CRYPTO_ASSETS.map(async c => {
+    try {
+      const q = await getQuote(c.symbol);
+      return { ...c, price: q.price, change: q.change, changePercent: q.changePercent, marketState: q.marketState };
+    } catch {
+      return { ...c, price: null, change: 0, changePercent: 0, marketState: 'CLOSED' };
+    }
+  }));
+  res.json(enriched);
+});
+
+app.post('/api/games/:gameId/crypto/buy', requireAuth, loadGame, async (req, res) => {
+  const game = req.game;
+  if (!game.allow_crypto)        return res.status(400).json({ error: 'Crypto trading is not enabled in this game' });
+  if (game.status === 'pending') return res.status(400).json({ error: 'Game has not started yet' });
+  if (game.status === 'ended')   return res.status(400).json({ error: 'Game has ended — no more trades' });
+
+  let { symbol, quantity } = req.body || {};
+  symbol = symbol?.toUpperCase(); quantity = parseFloat(quantity);
+  if (!symbol || isNaN(quantity) || quantity <= 0) return res.status(400).json({ error: 'symbol and positive quantity are required' });
+  if (!validSymbol(symbol)) return res.status(400).json({ error: 'Invalid symbol format' });
+  if (!validShares(quantity)) return res.status(400).json({ error: 'Quantity must be between 0 and 1,000,000' });
+
+  const asset = CRYPTO_ASSETS.find(c => c.symbol === symbol);
+  if (!asset) return res.status(400).json({ error: `${symbol} is not a supported crypto asset` });
+
+  let quote;
+  try { quote = await getQuote(symbol); } catch { return res.status(400).json({ error: 'Unable to fetch price — market data unavailable' }); }
+
+  const portfolio = ensurePortfolio(req.user.id, game.id, game.starting_cash);
+  const cost = +(quote.price * quantity).toFixed(6);
+  if (!validTotal(cost)) return res.status(400).json({ error: 'Invalid cost calculation' });
+  const avail = availableCash(req.user.id, game.id, portfolio);
+  if (cost > avail) return res.status(400).json({ error: `Insufficient funds — cost $${cost.toFixed(2)}, available $${avail.toFixed(2)}` });
+
+  applyFill(req.user.id, game.id, symbol, asset.name, 'buy', quantity, quote.price);
+  const updated = db.prepare('SELECT * FROM portfolios WHERE user_id = ? AND game_id = ?').get(req.user.id, game.id);
+  audit(req, 'CRYPTO_BUY', `${quantity} ${asset.name} @ $${quote.price.toFixed(2)}`);
+  res.json({ filled: true, message: `Bought ${quantity} ${asset.name} at $${quote.price.toFixed(2)}`, cash_balance: updated.cash_balance, total_cost: cost });
+});
+
+app.post('/api/games/:gameId/crypto/sell', requireAuth, loadGame, async (req, res) => {
+  const game = req.game;
+  if (!game.allow_crypto)        return res.status(400).json({ error: 'Crypto trading is not enabled in this game' });
+  if (game.status === 'pending') return res.status(400).json({ error: 'Game has not started yet' });
+  if (game.status === 'ended')   return res.status(400).json({ error: 'Game has ended' });
+
+  let { symbol, quantity } = req.body || {};
+  symbol = symbol?.toUpperCase(); quantity = parseFloat(quantity);
+  if (!symbol || isNaN(quantity) || quantity <= 0) return res.status(400).json({ error: 'symbol and positive quantity are required' });
+  if (!validSymbol(symbol)) return res.status(400).json({ error: 'Invalid symbol format' });
+  if (!validShares(quantity)) return res.status(400).json({ error: 'Quantity must be between 0 and 1,000,000' });
+
+  const asset = CRYPTO_ASSETS.find(c => c.symbol === symbol);
+  if (!asset) return res.status(400).json({ error: `${symbol} is not a supported crypto asset` });
+
+  const holding = db.prepare('SELECT * FROM holdings WHERE user_id = ? AND game_id = ? AND symbol = ?').get(req.user.id, game.id, symbol);
+  if (!holding || holding.shares < quantity - 0.000001)
+    return res.status(400).json({ error: `Insufficient — you own ${holding ? holding.shares.toFixed(8) : 0} ${asset.name}` });
+
+  let quote;
+  try { quote = await getQuote(symbol); } catch { return res.status(400).json({ error: 'Unable to fetch price — market data unavailable' }); }
+
+  applyFill(req.user.id, game.id, symbol, asset.name, 'sell', quantity, quote.price);
+  const updated = db.prepare('SELECT * FROM portfolios WHERE user_id = ? AND game_id = ?').get(req.user.id, game.id);
+  audit(req, 'CRYPTO_SELL', `${quantity} ${asset.name} @ $${quote.price.toFixed(2)}`);
+  res.json({ filled: true, message: `Sold ${quantity} ${asset.name} at $${quote.price.toFixed(2)}`, cash_balance: updated.cash_balance });
+});
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // ASSET CATALOGUE — unified list of everything tradeable in a game
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1298,33 +1515,26 @@ app.get('/api/games/:gameId/assets', requireAuth, loadGame, async (req, res) => 
   const game = req.game;
   const base  = `/api/games/${game.id}`;
 
-  // Fetch metals and futures prices in parallel, skip if not enabled
-  const [metalsResult, futuresResult] = await Promise.allSettled([
-    game.allow_metals
-      ? Promise.all(PRECIOUS_METALS.map(async m => {
-          try {
-            const q = await getQuote(m.symbol);
-            return { ...m, price: q.price, change: q.change, change_percent: q.changePercent, market_state: q.marketState };
-          } catch {
-            return { ...m, price: null, change: 0, change_percent: 0, market_state: 'CLOSED' };
-          }
-        }))
-      : Promise.resolve(null),
+  const priceEnrich = async (catalogue) => Promise.all(catalogue.map(async item => {
+    try {
+      const q = await getQuote(item.symbol);
+      return { ...item, price: q.price, change: q.change, change_percent: q.changePercent, market_state: q.marketState };
+    } catch {
+      return { ...item, price: null, change: 0, change_percent: 0, market_state: 'CLOSED' };
+    }
+  }));
 
-    game.allow_futures
-      ? Promise.all(FUTURES_CONTRACTS.map(async c => {
-          try {
-            const q = await getQuote(c.symbol);
-            return { ...c, price: q.price, change: q.change, change_percent: q.changePercent, market_state: q.marketState };
-          } catch {
-            return { ...c, price: null, change: 0, change_percent: 0, market_state: 'CLOSED' };
-          }
-        }))
-      : Promise.resolve(null),
+  const [metalsResult, futuresResult, forexResult, cryptoResult] = await Promise.allSettled([
+    game.allow_metals  ? priceEnrich(PRECIOUS_METALS)   : Promise.resolve(null),
+    game.allow_futures ? priceEnrich(FUTURES_CONTRACTS) : Promise.resolve(null),
+    game.allow_forex   ? priceEnrich(FOREX_PAIRS)        : Promise.resolve(null),
+    game.allow_crypto  ? priceEnrich(CRYPTO_ASSETS)      : Promise.resolve(null),
   ]);
 
   const metals  = metalsResult.status  === 'fulfilled' ? metalsResult.value  : null;
   const futures = futuresResult.status === 'fulfilled' ? futuresResult.value : null;
+  const forex   = forexResult.status   === 'fulfilled' ? forexResult.value   : null;
+  const crypto  = cryptoResult.status  === 'fulfilled' ? cryptoResult.value  : null;
 
   res.json({
     game: {
@@ -1335,6 +1545,8 @@ app.get('/api/games/:gameId/assets', requireAuth, loadGame, async (req, res) => 
       allow_fractional: !!game.allow_fractional,
       allow_futures:    !!game.allow_futures,
       allow_metals:     !!game.allow_metals,
+      allow_forex:      !!game.allow_forex,
+      allow_crypto:     !!game.allow_crypto,
       markets:          game.markets,
     },
 
@@ -1362,6 +1574,32 @@ app.get('/api/games/:gameId/assets', requireAuth, loadGame, async (req, res) => 
             list:  '/api/metals/list',
             buy:   `${base}/metals/buy  POST  { symbol, oz }`,
             sell:  `${base}/metals/sell  POST  { symbol, oz }`,
+          },
+        }
+      : { enabled: false },
+
+    forex: forex
+      ? {
+          description: 'Spot forex currency pairs. Priced as quoted currency per base currency unit.',
+          unit: 'units',
+          assets: forex,
+          endpoints: {
+            list:  '/api/forex/list',
+            buy:   `${base}/forex/buy  POST  { symbol, quantity }`,
+            sell:  `${base}/forex/sell  POST  { symbol, quantity }`,
+          },
+        }
+      : { enabled: false },
+
+    crypto: crypto
+      ? {
+          description: 'Spot cryptocurrency assets. Trade 24/7 — no market-hours restriction.',
+          unit: 'coins',
+          assets: crypto,
+          endpoints: {
+            list:  '/api/crypto/list',
+            buy:   `${base}/crypto/buy  POST  { symbol, quantity }`,
+            sell:  `${base}/crypto/sell  POST  { symbol, quantity }`,
           },
         }
       : { enabled: false },

@@ -154,6 +154,8 @@ db.exec(`
 const migrations = [
   "ALTER TABLE game_config    ADD COLUMN allow_futures    INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE game_config    ADD COLUMN allow_metals     INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE game_config    ADD COLUMN allow_forex      INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE game_config    ADD COLUMN allow_crypto     INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE game_config    ADD COLUMN futures_margin   REAL    NOT NULL DEFAULT 0.20",
   "ALTER TABLE game_config    ADD COLUMN is_active        INTEGER NOT NULL DEFAULT 1",
   "ALTER TABLE portfolios     ADD COLUMN joined_at        TEXT    NOT NULL DEFAULT (datetime('now'))",

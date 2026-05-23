@@ -226,15 +226,22 @@
     .warn-box { background:#3d2a00; color:#fcd34d; border-radius:6px; padding:10px 14px; font-size:12px; line-height:1.6; margin-bottom:12px; }
     hr.sep { border:none; border-top:1px solid var(--border); margin:18px 0; }
 
-    /* ── Precious Metals ── */
-    .metals-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:14px; margin-bottom:20px; }
-    .metal-card { background:var(--bg2); border:1px solid var(--border); border-radius:10px; padding:16px; cursor:pointer; transition:border-color .2s,background .2s; }
+    /* ── Markets (Metals / Forex / Crypto) ── */
+    .spot-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px; margin-bottom:20px; }
+    .spot-card { background:var(--bg2); border:1px solid var(--border); border-radius:10px; padding:14px; cursor:pointer; transition:border-color .2s,background .2s; }
+    .spot-card:hover,.spot-card.selected { border-color:var(--accent); background:var(--bg3); }
+    .spot-card-icon { font-size:24px; margin-bottom:6px; }
+    .spot-card-name { font-size:14px; font-weight:700; }
+    .spot-card-desc { font-size:11px; color:var(--muted); margin-top:2px; margin-bottom:6px; }
+    .spot-card-price { font-size:18px; font-weight:800; }
+    .spot-card-change { font-size:11px; margin-top:2px; }
+    .markets-cat-tabs { display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; }
+    .markets-cat-tab { padding:6px 16px; border-radius:20px; border:1px solid var(--border); background:var(--bg2); color:var(--muted); cursor:pointer; font-size:13px; font-weight:600; transition:all .15s; }
+    .markets-cat-tab.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+    /* legacy aliases so metals-grid references still work */
+    .metals-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px; margin-bottom:20px; }
+    .metal-card { background:var(--bg2); border:1px solid var(--border); border-radius:10px; padding:14px; cursor:pointer; transition:border-color .2s,background .2s; }
     .metal-card:hover,.metal-card.selected { border-color:var(--gold); background:var(--bg3); }
-    .metal-card-icon { font-size:28px; margin-bottom:8px; }
-    .metal-card-name { font-size:15px; font-weight:700; }
-    .metal-card-desc { font-size:11px; color:var(--muted); margin-top:2px; margin-bottom:8px; }
-    .metal-card-price { font-size:20px; font-weight:800; }
-    .metal-card-change { font-size:12px; margin-top:2px; }
   </style>
 </head>
 <body>
@@ -294,7 +301,7 @@
       <button class="nav-btn" data-view="portfolio" onclick="App.navigate('portfolio')" style="display:none" id="nav-portfolio">Portfolio <span id="nav-pending-badge" style="display:none;background:var(--gold);color:#000;font-size:10px;font-weight:700;border-radius:10px;padding:1px 6px;margin-left:3px"></span></button>
       <button class="nav-btn" data-view="trade"     onclick="App.navigate('trade')"     style="display:none" id="nav-trade">Trade</button>
       <button class="nav-btn" data-view="futures"   onclick="App.navigate('futures')"   style="display:none" id="nav-futures">Futures</button>
-      <button class="nav-btn" data-view="metals"    onclick="App.navigate('metals')"    style="display:none" id="nav-metals">Metals</button>
+      <button class="nav-btn" data-view="markets"   onclick="App.navigate('markets')"   style="display:none" id="nav-markets">Markets</button>
       <button class="nav-btn" data-view="leaderboard" onclick="App.navigate('leaderboard')" style="display:none" id="nav-leaderboard">Leaderboard</button>
       <button class="nav-btn" data-view="history"   onclick="App.navigate('history')"   style="display:none" id="nav-history">History</button>
       <button class="nav-btn" data-view="admin"     onclick="App.navigate('admin')"     style="display:none" id="nav-admin">⚙ Admin</button>
@@ -364,7 +371,27 @@
             <tbody id="metals-holdings-body"></tbody>
           </table>
         </div>
-        <div id="metals-holdings-empty" class="empty"><div class="empty-icon">🥇</div><div class="empty-text">No metals holdings.</div><button class="btn btn-primary btn-sm" style="margin-top:10px" onclick="App.navigate('metals')">Trade Precious Metals →</button></div>
+        <div id="metals-holdings-empty" class="empty"><div class="empty-icon">🥇</div><div class="empty-text">No metals holdings.</div><button class="btn btn-primary btn-sm" style="margin-top:10px" onclick="App.navigate('markets')">Trade Precious Metals →</button></div>
+      </div>
+      <div class="card" id="forex-holdings-card" style="display:none;margin-top:16px">
+        <div class="section-title" style="margin-bottom:12px">Forex <span id="forex-holdings-count" class="tag">0</span></div>
+        <div class="table-wrap">
+          <table id="forex-holdings-table" style="display:none">
+            <thead><tr><th>Pair</th><th>Name</th><th class="text-right">Units</th><th class="text-right">Avg Cost</th><th class="text-right">Rate</th><th class="text-right">Value</th><th class="text-right">Gain/Loss</th><th></th></tr></thead>
+            <tbody id="forex-holdings-body"></tbody>
+          </table>
+        </div>
+        <div id="forex-holdings-empty" class="empty"><div class="empty-icon">💱</div><div class="empty-text">No forex positions.</div><button class="btn btn-primary btn-sm" style="margin-top:10px" onclick="App.navigate('markets')">Trade Forex →</button></div>
+      </div>
+      <div class="card" id="crypto-holdings-card" style="display:none;margin-top:16px">
+        <div class="section-title" style="margin-bottom:12px">Crypto <span id="crypto-holdings-count" class="tag">0</span></div>
+        <div class="table-wrap">
+          <table id="crypto-holdings-table" style="display:none">
+            <thead><tr><th>Symbol</th><th>Name</th><th class="text-right">Coins</th><th class="text-right">Avg Cost</th><th class="text-right">Price</th><th class="text-right">Value</th><th class="text-right">Gain/Loss</th><th></th></tr></thead>
+            <tbody id="crypto-holdings-body"></tbody>
+          </table>
+        </div>
+        <div id="crypto-holdings-empty" class="empty"><div class="empty-icon">₿</div><div class="empty-text">No crypto holdings.</div><button class="btn btn-primary btn-sm" style="margin-top:10px" onclick="App.navigate('markets')">Trade Crypto →</button></div>
       </div>
     </div>
 
@@ -582,17 +609,29 @@
       </div>
     </div>
 
-    <!-- ── PRECIOUS METALS ──────────────────────────────────────────────────── -->
-    <div id="view-metals" class="view">
-      <div class="section-title">Precious Metals <span class="tag" id="metals-last-updated"></span></div>
-      <div class="info-box" style="margin-bottom:16px">
-        🥇 Buy and hold precious metals at live spot prices. Prices are sourced from COMEX/NYMEX nearby futures and update every 2 minutes.
-        Metals trade globally nearly 24/5 — no US market-hours restriction applies.
-      </div>
-      <div class="metals-grid" id="metals-price-grid"></div>
+    <!-- ── MARKETS (Metals / Forex / Crypto) ────────────────────────────────── -->
+    <div id="view-markets" class="view">
+      <div class="section-title">Markets <span class="tag" id="markets-last-updated"></span></div>
 
-      <!-- Trade panel — shown when a metal is selected -->
-      <div id="metals-trade-panel" style="display:none">
+      <!-- Category tabs — only rendered for enabled categories -->
+      <div class="markets-cat-tabs" id="markets-cat-tabs"></div>
+
+      <!-- Spot price grids per category -->
+      <div id="markets-metals-section" style="display:none">
+        <div class="info-box" style="margin-bottom:12px">🥇 Precious metals at live COMEX/NYMEX spot prices. Trade 24/5 — no market-hours restriction.</div>
+        <div class="spot-grid" id="metals-price-grid"></div>
+      </div>
+      <div id="markets-forex-section" style="display:none">
+        <div class="info-box" style="margin-bottom:12px">💱 Spot forex pairs. Priced as quoted currency per base currency. Forex markets are open 24/5.</div>
+        <div class="spot-grid" id="forex-price-grid"></div>
+      </div>
+      <div id="markets-crypto-section" style="display:none">
+        <div class="info-box" style="margin-bottom:12px">₿ Spot cryptocurrency assets at live prices. Crypto trades 24/7 including weekends.</div>
+        <div class="spot-grid" id="crypto-price-grid"></div>
+      </div>
+
+      <!-- Trade panel — shown when any spot asset is selected -->
+      <div id="markets-trade-panel" style="display:none">
         <hr class="sep">
         <div style="display:grid;grid-template-columns:1fr 300px;gap:18px;align-items:start">
           <!-- Left: price info -->
@@ -605,7 +644,7 @@
               <div style="text-align:right">
                 <div style="font-size:28px;font-weight:800" id="mt-price"></div>
                 <div id="mt-change" style="font-size:13px"></div>
-                <div class="muted" style="font-size:10px;margin-top:2px">per troy oz</div>
+                <div class="muted" style="font-size:10px;margin-top:2px" id="mt-unit-label">per unit</div>
               </div>
             </div>
             <div id="mt-holding-info" style="font-size:13px;color:var(--muted);margin-top:6px"></div>
@@ -613,14 +652,14 @@
           <!-- Right: buy/sell form -->
           <div class="card">
             <div class="trade-tabs" style="margin-bottom:14px">
-              <button class="trade-tab buy active" id="mt-buy-tab" onclick="App.setMetalsTradeType('buy')">BUY</button>
-              <button class="trade-tab sell" id="mt-sell-tab" onclick="App.setMetalsTradeType('sell')">SELL</button>
+              <button class="trade-tab buy active" id="mt-buy-tab" onclick="App.setSpotTradeType('buy')">BUY</button>
+              <button class="trade-tab sell" id="mt-sell-tab" onclick="App.setSpotTradeType('sell')">SELL</button>
             </div>
             <div class="form-group">
-              <label>Troy Ounces (oz)</label>
+              <label id="mt-qty-label">Quantity</label>
               <div class="shares-row">
-                <input id="mt-oz" type="number" min="0.001" step="any" placeholder="0" oninput="App.updateMetalsTotal()">
-                <button class="btn btn-ghost btn-sm" onclick="App.setMaxMetalsOz()">Max</button>
+                <input id="mt-oz" type="number" min="0.000001" step="any" placeholder="0" oninput="App.updateSpotTotal()">
+                <button class="btn btn-ghost btn-sm" onclick="App.setMaxSpotQty()">Max</button>
               </div>
             </div>
             <div style="background:var(--bg3);border-radius:6px;padding:11px;margin-bottom:12px;font-size:12px">
@@ -629,7 +668,7 @@
               <div style="display:flex;justify-content:space-between"><span class="muted">Cash Available</span><span id="mt-cash" style="font-weight:600">$0.00</span></div>
             </div>
             <div id="metals-error" class="error-msg" style="margin-bottom:8px"></div>
-            <button class="btn btn-full btn-green" id="mt-submit-btn" onclick="App.executeMetal()"><span id="mt-submit-label">Buy</span></button>
+            <button class="btn btn-full btn-green" id="mt-submit-btn" onclick="App.executeSpot()"><span id="mt-submit-label">Buy</span></button>
           </div>
         </div>
       </div>
@@ -666,6 +705,16 @@
         <div style="font-size:13px;font-weight:600;margin-bottom:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Precious Metals</div>
         <div class="table-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Metal</th><th class="text-right">Oz</th><th class="text-right">Price/oz</th><th class="text-right">Total</th></tr></thead><tbody id="metals-history-body"></tbody></table></div>
         <div id="metals-history-empty" class="empty" style="display:none"><div class="empty-icon">📋</div><div class="empty-text">No metals transactions yet.</div></div>
+      </div>
+      <div class="card" id="forex-history-card" style="display:none;margin-top:16px">
+        <div style="font-size:13px;font-weight:600;margin-bottom:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Forex</div>
+        <div class="table-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Pair</th><th class="text-right">Units</th><th class="text-right">Rate</th><th class="text-right">Total</th></tr></thead><tbody id="forex-history-body"></tbody></table></div>
+        <div id="forex-history-empty" class="empty" style="display:none"><div class="empty-icon">📋</div><div class="empty-text">No forex transactions yet.</div></div>
+      </div>
+      <div class="card" id="crypto-history-card" style="display:none;margin-top:16px">
+        <div style="font-size:13px;font-weight:600;margin-bottom:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Crypto</div>
+        <div class="table-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Asset</th><th class="text-right">Coins</th><th class="text-right">Price</th><th class="text-right">Total</th></tr></thead><tbody id="crypto-history-body"></tbody></table></div>
+        <div id="crypto-history-empty" class="empty" style="display:none"><div class="empty-icon">📋</div><div class="empty-text">No crypto transactions yet.</div></div>
       </div>
     </div>
 
@@ -713,7 +762,9 @@
         <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:14px">
           <div class="toggle-row"><input type="checkbox" id="admin-fractional" checked><label for="admin-fractional">Allow fractional shares</label></div>
           <div class="toggle-row"><input type="checkbox" id="admin-futures"><label for="admin-futures">Enable futures trading</label></div>
-          <div class="toggle-row"><input type="checkbox" id="admin-metals"><label for="admin-metals">🥇 Enable precious metals trading</label></div>
+          <div class="toggle-row"><input type="checkbox" id="admin-metals"><label for="admin-metals">🥇 Precious metals</label></div>
+          <div class="toggle-row"><input type="checkbox" id="admin-forex"><label for="admin-forex">💱 Forex pairs</label></div>
+          <div class="toggle-row"><input type="checkbox" id="admin-crypto"><label for="admin-crypto">₿ Crypto assets</label></div>
           <div class="toggle-row"><input type="checkbox" id="admin-active" checked><label for="admin-active">Active (visible to players)</label></div>
           <div class="toggle-row"><input type="checkbox" id="admin-private" onchange="App.onPrivateToggle()"><label for="admin-private">🔒 Private game (password required to join)</label></div>
         </div>
@@ -1115,12 +1166,19 @@ const App = (() => {
   let tradeType       = 'buy';
   let futuresDir      = 'long';
   let selectedFutures = null;
+  // Spot markets (metals / forex / crypto)
+  let selectedSpotAsset = null;  // { symbol, name, description, price, category, _type:'metal'|'forex'|'crypto' }
+  let spotTradeType     = 'buy';
+  let metalsList        = [];
+  let forexList         = [];
+  let cryptoList        = [];
+  let marketsCategory   = 'metals'; // active tab in markets view
+  let marketsRefreshTimer = null;
+  // legacy aliases kept for any existing code paths
   let selectedMetal   = null;
   let metalsTradeType = 'buy';
-  let metalsList      = [];
   let searchTimer     = null;
   let refreshTimer    = null;
-  let metalsRefreshTimer = null;
   // Sell modal
   let smSymbol = null, smMaxShares = 0, smPrice = 0;
   // Close futures modal
@@ -1206,13 +1264,13 @@ const App = (() => {
     clearInterval(refreshTimer);
     if (view !== 'portfolio') { clearInterval(countdownTimer); const l=document.getElementById('dash-live'); if(l) l.style.display='none'; }
     if (view !== 'futures') clearInterval(futuresRefreshTimer);
-    if (view !== 'metals')  clearInterval(metalsRefreshTimer);
+    if (view !== 'markets') clearInterval(marketsRefreshTimer);
     clearInterval(_marketStatusInterval);
     if (view==='games')       { loadGames(); }
     if (view==='portfolio')   { loadPortfolio(); refreshTimer=setInterval(loadPortfolio,30000); }
     if (view==='trade')       { loadTrade(); _marketStatusInterval=setInterval(refreshMarketStatus,60000); }
     if (view==='futures')     { loadFutures(); }
-    if (view==='metals')      { loadMetals(); metalsRefreshTimer=setInterval(loadMetals,120000); }
+    if (view==='markets')     { loadMarkets(); marketsRefreshTimer=setInterval(loadMarkets,120000); }
 
     // Restore scroll position after DOM settles
     requestAnimationFrame(() => window.scrollTo(0, _scrollPos[view] || 0));
@@ -1233,9 +1291,13 @@ const App = (() => {
     document.getElementById('nav-leaderboard').style.display  = '';
     document.getElementById('nav-history').style.display      = '';
     if (currentGame.allow_futures) document.getElementById('nav-futures').style.display = '';
-    if (currentGame.allow_metals)  {
-      document.getElementById('nav-metals').style.display = '';
-      api('GET', '/api/metals/list').then(m => { metalsList = m; }).catch(()=>{});
+    const hasMarkets = currentGame.allow_metals || currentGame.allow_forex || currentGame.allow_crypto;
+    if (hasMarkets) {
+      document.getElementById('nav-markets').style.display = '';
+      // Pre-fetch all enabled spot lists so portfolio filtering works immediately
+      if (currentGame.allow_metals) api('GET','/api/metals/list').then(m=>{metalsList=m;}).catch(()=>{});
+      if (currentGame.allow_forex)  api('GET','/api/forex/list').then(f=>{forexList=f;}).catch(()=>{});
+      if (currentGame.allow_crypto) api('GET','/api/crypto/list').then(c=>{cryptoList=c;}).catch(()=>{});
     }
     updateBanner();
     navigate('portfolio');
@@ -1248,7 +1310,7 @@ const App = (() => {
     currentSymbol = null; currentQuote = null; selectedFutures = null;
     document.getElementById('nav-game-context').style.display = 'none';
     document.getElementById('nav-game-name').textContent      = '';
-    ['portfolio','trade','futures','metals','leaderboard','history'].forEach(v =>
+    ['portfolio','trade','futures','markets','leaderboard','history'].forEach(v =>
       document.getElementById(`nav-${v}`).style.display = 'none');
     document.getElementById('nav-apikeys').style.display = 'none';
     document.getElementById('game-banner').className = '';
@@ -1443,9 +1505,17 @@ const App = (() => {
       updateBanner();
 
       const metalSymSet = new Set(metalsList.map(m => m.symbol));
-      const stockHoldings = data.holdings.filter(h => !metalSymSet.has(h.symbol));
-      const metalHoldings = data.holdings.filter(h =>  metalSymSet.has(h.symbol));
-      const metalsValue   = metalHoldings.reduce((s, h) => s + h.market_value, 0);
+      const forexSymSet = new Set(forexList.map(f => f.symbol));
+      const cryptoSymSet = new Set(cryptoList.map(c => c.symbol));
+      const allSpotSet  = new Set([...metalSymSet, ...forexSymSet, ...cryptoSymSet]);
+      const stockHoldings  = data.holdings.filter(h => !allSpotSet.has(h.symbol));
+      const metalHoldings  = data.holdings.filter(h => metalSymSet.has(h.symbol));
+      const forexHoldings  = data.holdings.filter(h => forexSymSet.has(h.symbol));
+      const cryptoHoldings = data.holdings.filter(h => cryptoSymSet.has(h.symbol));
+      const metalsValue  = metalHoldings.reduce((s, h) => s + h.market_value, 0);
+      const forexValue   = forexHoldings.reduce((s, h) => s + h.market_value, 0);
+      const cryptoValue  = cryptoHoldings.reduce((s, h) => s + h.market_value, 0);
+      const spotValue    = metalsValue + forexValue + cryptoValue;
 
       const gain    = data.total_value - data.game.starting_cash;
       const gainPct = (gain / data.game.starting_cash) * 100;
@@ -1456,8 +1526,10 @@ const App = (() => {
           <div class="card-value">${fmt$(data.available_cash ?? data.cash_balance)}</div>
           <div class="card-sub">of ${fmt$(data.cash_balance)} balance${data.reserved_cash > 0 ? ` · <span style="color:var(--gold)">$${fmt$(data.reserved_cash).replace('$','')} in pending orders</span>` : ''}</div>
         </div>
-        <div class="card"><div class="card-title">Stock Value</div><div class="card-value">${fmt$(data.stock_value - metalsValue)}</div><div class="card-sub">${stockHoldings.length} position${stockHoldings.length!==1?'s':''}</div></div>
-        ${data.game.allow_metals ? `<div class="card"><div class="card-title">Metals Value</div><div class="card-value" style="color:var(--gold)">${fmt$(metalsValue)}</div><div class="card-sub">${metalHoldings.length} position${metalHoldings.length!==1?'s':''}</div></div>` : ''}
+        <div class="card"><div class="card-title">Stock Value</div><div class="card-value">${fmt$(data.stock_value - spotValue)}</div><div class="card-sub">${stockHoldings.length} position${stockHoldings.length!==1?'s':''}</div></div>
+        ${data.game.allow_metals  ? `<div class="card"><div class="card-title">Metals Value</div><div class="card-value" style="color:var(--gold)">${fmt$(metalsValue)}</div><div class="card-sub">${metalHoldings.length} position${metalHoldings.length!==1?'s':''}</div></div>` : ''}
+        ${data.game.allow_forex   ? `<div class="card"><div class="card-title">Forex Value</div><div class="card-value">${fmt$(forexValue)}</div><div class="card-sub">${forexHoldings.length} position${forexHoldings.length!==1?'s':''}</div></div>` : ''}
+        ${data.game.allow_crypto  ? `<div class="card"><div class="card-title">Crypto Value</div><div class="card-value">${fmt$(cryptoValue)}</div><div class="card-sub">${cryptoHoldings.length} position${cryptoHoldings.length!==1?'s':''}</div></div>` : ''}
         ${data.game.allow_futures ? `<div class="card"><div class="card-title">Futures P&L</div><div class="card-value ${colorClass(data.futures_pnl)}">${data.futures_pnl>=0?'+':''}${fmt$(data.futures_pnl)}</div><div class="card-sub">${(data.futures_positions||[]).length} open</div></div>` : ''}
       `;
       document.getElementById('dash-updated').textContent = 'Updated '+new Date().toLocaleTimeString();
@@ -1484,33 +1556,40 @@ const App = (() => {
         </tr>`).join('');
       }
 
-      // Metals holdings card
-      const mCard = document.getElementById('metals-holdings-card');
-      if (data.game.allow_metals) {
-        mCard.style.display = '';
-        document.getElementById('metals-holdings-count').textContent = metalHoldings.length;
-        const mTbody = document.getElementById('metals-holdings-body');
-        if (!metalHoldings.length) {
-          mTbody.innerHTML=''; document.getElementById('metals-holdings-empty').style.display=''; document.getElementById('metals-holdings-table').style.display='none';
+      // Helper: render a spot holdings card generically
+      function renderSpotCard(cardId, countId, tableId, bodyId, emptyId, holdings, catalogue, unitLabel, sellType) {
+        const card = document.getElementById(cardId);
+        card.style.display = '';
+        document.getElementById(countId).textContent = holdings.length;
+        const tbody = document.getElementById(bodyId);
+        if (!holdings.length) {
+          tbody.innerHTML=''; document.getElementById(emptyId).style.display=''; document.getElementById(tableId).style.display='none';
         } else {
-          document.getElementById('metals-holdings-empty').style.display='none'; document.getElementById('metals-holdings-table').style.display='';
-          mTbody.innerHTML = metalHoldings.map(h => {
-            const metalInfo = metalsList.find(m => m.symbol === h.symbol);
+          document.getElementById(emptyId).style.display='none'; document.getElementById(tableId).style.display='';
+          tbody.innerHTML = holdings.map(h => {
+            const info = catalogue.find(x => x.symbol === h.symbol);
             return `<tr>
               <td><strong>${esc(h.symbol)}</strong></td>
-              <td class="muted">${esc(metalInfo?.name || h.company_name || '—')}</td>
-              <td class="text-right">${fmtShares(h.shares)} oz</td>
+              <td class="muted">${esc(info?.name || h.company_name || '—')}</td>
+              <td class="text-right">${fmtShares(h.shares)} ${unitLabel}</td>
               <td class="text-right muted">${fmt$(h.avg_cost)}</td>
               <td class="text-right">${fmt$(h.current_price)}</td>
               <td class="text-right">${fmt$(h.market_value)}</td>
               <td class="text-right ${colorClass(h.gain_loss)}">${h.gain_loss>=0?'▲ +':'▼ '}${fmt$(h.gain_loss)}<br><span style="font-size:11px">${fmtPct(h.gain_loss_pct)}</span></td>
               <td><button class="btn btn-red btn-sm"
-                data-symbol="${esc(h.symbol)}" data-oz="${h.shares}" data-price="${h.current_price}" data-name="${esc(metalInfo?.name||h.company_name||'')}"
-                onclick="App.openMetalSellModal(this.dataset.symbol,parseFloat(this.dataset.oz),parseFloat(this.dataset.price),this.dataset.name)">Sell</button></td>
+                data-symbol="${esc(h.symbol)}" data-qty="${h.shares}" data-price="${h.current_price}" data-name="${esc(info?.name||h.company_name||'')}" data-type="${sellType}"
+                onclick="App.openSpotSellModal(this.dataset.symbol,parseFloat(this.dataset.qty),parseFloat(this.dataset.price),this.dataset.name,this.dataset.type)">Sell</button></td>
             </tr>`;
           }).join('');
         }
-      } else { mCard.style.display='none'; }
+      }
+
+      if (data.game.allow_metals)  renderSpotCard('metals-holdings-card','metals-holdings-count','metals-holdings-table','metals-holdings-body','metals-holdings-empty', metalHoldings,  metalsList,  'oz',    'metal');
+      else document.getElementById('metals-holdings-card').style.display='none';
+      if (data.game.allow_forex)   renderSpotCard('forex-holdings-card', 'forex-holdings-count', 'forex-holdings-table', 'forex-holdings-body', 'forex-holdings-empty',  forexHoldings,  forexList,   'units', 'forex');
+      else document.getElementById('forex-holdings-card').style.display='none';
+      if (data.game.allow_crypto)  renderSpotCard('crypto-holdings-card','crypto-holdings-count','crypto-holdings-table','crypto-holdings-body','crypto-holdings-empty', cryptoHoldings, cryptoList,  'coins', 'crypto');
+      else document.getElementById('crypto-holdings-card').style.display='none';
 
       // Pending orders
       try {
@@ -2108,143 +2187,224 @@ const App = (() => {
     } catch(err){console.error(err);}
   }
 
-  // ── Precious Metals ────────────────────────────────────────────────────────
-  const METAL_ICONS = { 'GC=F':'🥇', 'SI=F':'🥈', 'PL=F':'💿', 'PA=F':'⚪' };
+  // ── Markets (Metals / Forex / Crypto unified) ─────────────────────────────
+  const SPOT_ICONS = {
+    'GC=F':'🥇','SI=F':'🥈','PL=F':'💿','PA=F':'⚪',
+    'BTC-USD':'₿','ETH-USD':'Ξ','SOL-USD':'◎','BNB-USD':'🔶','XRP-USD':'✕',
+    'ADA-USD':'🔵','DOGE-USD':'🐕','AVAX-USD':'🏔','LTC-USD':'Ł','DOT-USD':'⬤','LINK-USD':'🔗',
+  };
 
-  async function loadMetals() {
+  // Catalogue info for a symbol (metals/forex/crypto)
+  function spotInfo(symbol) {
+    return metalsList.find(x=>x.symbol===symbol)
+      || forexList.find(x=>x.symbol===symbol)
+      || cryptoList.find(x=>x.symbol===symbol)
+      || null;
+  }
+  function spotType(symbol) {
+    if (metalsList.some(x=>x.symbol===symbol))  return 'metal';
+    if (forexList.some(x=>x.symbol===symbol))   return 'forex';
+    if (cryptoList.some(x=>x.symbol===symbol))  return 'crypto';
+    return null;
+  }
+  function spotApiPrefix(type) {
+    return type==='metal' ? 'metals' : type==='forex' ? 'forex' : 'crypto';
+  }
+  function spotUnitLabel(type) {
+    return type==='metal' ? 'troy oz' : type==='forex' ? 'units' : 'coins';
+  }
+
+  async function loadMarkets(category) {
     if (!currentGameId) return;
+    if (category) marketsCategory = category;
+
+    // Figure out which categories are enabled
+    const enabled = [];
+    if (currentGame?.allow_metals) enabled.push('metals');
+    if (currentGame?.allow_forex)  enabled.push('forex');
+    if (currentGame?.allow_crypto) enabled.push('crypto');
+    if (!enabled.length) return;
+    if (!enabled.includes(marketsCategory)) marketsCategory = enabled[0];
+
+    // Render category tabs
+    const tabsEl = document.getElementById('markets-cat-tabs');
+    const TAB_LABELS = { metals:'🥇 Metals', forex:'💱 Forex', crypto:'₿ Crypto' };
+    tabsEl.innerHTML = enabled.map(c =>
+      `<button class="markets-cat-tab${c===marketsCategory?' active':''}" onclick="App.loadMarkets('${c}')">${TAB_LABELS[c]}</button>`
+    ).join('');
+
+    // Show/hide sections
+    ['metals','forex','crypto'].forEach(c => {
+      const s = document.getElementById(`markets-${c}-section`);
+      if (s) s.style.display = (c===marketsCategory && enabled.includes(c)) ? '' : 'none';
+    });
+
     try {
-      const [metals, portData] = await Promise.all([
-        api('GET', '/api/metals/list'),
+      // Fetch prices + portfolio
+      const [spotData, portData] = await Promise.all([
+        marketsCategory === 'metals' ? api('GET','/api/metals/list') :
+        marketsCategory === 'forex'  ? api('GET','/api/forex/list')  :
+                                       api('GET','/api/crypto/list'),
         api('GET', `/api/games/${currentGameId}/portfolio`),
       ]);
-      metalsList = metals;
-      const metalHoldings = {};
-      for (const h of portData.holdings) metalHoldings[h.symbol] = h;
 
-      const updEl = document.getElementById('metals-last-updated');
+      // Update cached list
+      if (marketsCategory==='metals')  metalsList  = spotData;
+      if (marketsCategory==='forex')   forexList   = spotData;
+      if (marketsCategory==='crypto')  cryptoList  = spotData;
+
+      const holdingsMap = {};
+      for (const h of portData.holdings) holdingsMap[h.symbol] = h;
+
+      const updEl = document.getElementById('markets-last-updated');
       if (updEl) updEl.textContent = 'Updated ' + new Date().toLocaleTimeString();
 
-      const grid = document.getElementById('metals-price-grid');
-      grid.innerHTML = metals.map(m => {
-        const chg  = m.change ?? 0;
+      const gridId = marketsCategory==='metals' ? 'metals-price-grid' :
+                     marketsCategory==='forex'  ? 'forex-price-grid'  : 'crypto-price-grid';
+      const grid = document.getElementById(gridId);
+      const unitLbl = spotUnitLabel(marketsCategory==='metals'?'metal':marketsCategory==='forex'?'forex':'crypto');
+
+      grid.innerHTML = spotData.map(m => {
+        const chg    = m.change ?? 0;
         const chgPct = m.changePercent ?? 0;
-        const holding = metalHoldings[m.symbol];
-        const heldStr = holding ? ` · <span style="color:var(--gold)">${fmtShares(holding.shares)} oz held</span>` : '';
-        return `<div class="metal-card${selectedMetal?.symbol===m.symbol?' selected':''}"
+        const holding = holdingsMap[m.symbol];
+        const heldStr = holding ? ` · <span style="color:var(--accent)">${fmtShares(holding.shares)} ${unitLbl} held</span>` : '';
+        const isSelected = selectedSpotAsset?.symbol === m.symbol;
+        return `<div class="spot-card${isSelected?' selected':''}"
           data-symbol="${esc(m.symbol)}"
-          onclick="App.selectMetal(this.dataset.symbol)">
-          <div class="metal-card-icon">${METAL_ICONS[m.symbol]||'🪙'}</div>
-          <div class="metal-card-name">${esc(m.name)}</div>
-          <div class="metal-card-desc">${esc(m.description)}${heldStr}</div>
-          <div class="metal-card-price">${m.price!=null?fmt$(m.price):'—'}</div>
-          <div class="metal-card-change ${colorClass(chg)}">${chg>=0?'+':''}${chg.toFixed(2)} (${fmtPct(chgPct)})</div>
+          onclick="App.selectSpotAsset(this.dataset.symbol)">
+          <div class="spot-card-icon">${SPOT_ICONS[m.symbol]||'💹'}</div>
+          <div class="spot-card-name">${esc(m.name)}</div>
+          <div class="spot-card-desc">${esc(m.description||'')}${heldStr}</div>
+          <div class="spot-card-price">${m.price!=null?fmt$(m.price):'—'}</div>
+          <div class="spot-card-change ${colorClass(chg)}">${chg>=0?'+':''}${chg.toFixed(marketsCategory==='forex'?5:2)} (${fmtPct(chgPct)})</div>
         </div>`;
       }).join('');
 
-      if (selectedMetal) {
-        const fresh = metals.find(m => m.symbol === selectedMetal.symbol);
-        if (fresh) { selectedMetal = { ...selectedMetal, ...fresh }; updateMetalsPanel(portData); }
+      if (selectedSpotAsset && spotData.some(x=>x.symbol===selectedSpotAsset.symbol)) {
+        const fresh = spotData.find(x=>x.symbol===selectedSpotAsset.symbol);
+        if (fresh) { selectedSpotAsset = { ...selectedSpotAsset, ...fresh }; updateSpotPanel(portData); }
       }
-    } catch(err) { console.error('loadMetals error', err); }
+    } catch(err) { console.error('loadMarkets error', err); }
   }
 
-  function selectMetal(symbol) {
-    const m = metalsList.find(m => m.symbol === symbol);
-    if (!m) return;
-    selectedMetal = m;
-    document.querySelectorAll('.metal-card').forEach(c => c.classList.toggle('selected', c.dataset.symbol === symbol));
-    document.getElementById('metals-trade-panel').style.display = '';
-    api('GET', `/api/games/${currentGameId}/portfolio`).then(portData => updateMetalsPanel(portData)).catch(()=>{});
+  function selectSpotAsset(symbol) {
+    const sType = spotType(symbol);
+    const cat   = sType==='metal' ? 'metals' : sType==='forex' ? 'forex' : 'crypto';
+    const list  = sType==='metal' ? metalsList : sType==='forex' ? forexList : cryptoList;
+    const asset = list.find(x => x.symbol === symbol);
+    if (!asset) return;
+    selectedSpotAsset = { ...asset, _type: sType };
+    document.querySelectorAll('.spot-card').forEach(c => c.classList.toggle('selected', c.dataset.symbol === symbol));
+    document.getElementById('markets-trade-panel').style.display = '';
+    document.getElementById('mt-qty-label').textContent = sType==='metal' ? 'Troy Ounces (oz)' : sType==='forex' ? 'Units' : 'Coins';
+    document.getElementById('mt-unit-label').textContent = spotUnitLabel(sType);
+    api('GET', `/api/games/${currentGameId}/portfolio`).then(portData => updateSpotPanel(portData)).catch(()=>{});
   }
 
-  function updateMetalsPanel(portData) {
-    if (!selectedMetal) return;
-    const m = selectedMetal;
+  function updateSpotPanel(portData) {
+    if (!selectedSpotAsset) return;
+    const m = selectedSpotAsset;
+    const unitLbl = spotUnitLabel(m._type);
     document.getElementById('mt-name').textContent  = m.name;
-    document.getElementById('mt-desc').textContent  = m.description;
+    document.getElementById('mt-desc').textContent  = m.description || '';
     document.getElementById('mt-price').textContent = m.price != null ? fmt$(m.price) : '—';
     const chgEl = document.getElementById('mt-change');
     const chg = m.change ?? 0;
-    chgEl.textContent = `${chg>=0?'+':''}${chg.toFixed(2)} (${fmtPct(m.changePercent??0)})`;
-    chgEl.className   = colorClass(chg);
-
+    const decimals = m._type==='forex' ? 5 : 2;
+    chgEl.textContent = `${chg>=0?'+':''}${chg.toFixed(decimals)} (${fmtPct(m.changePercent??0)})`;
+    chgEl.className = colorClass(chg);
     const holding = portData.holdings.find(h => h.symbol === m.symbol);
     const heldEl  = document.getElementById('mt-holding-info');
     heldEl.textContent = holding
-      ? `You hold ${fmtShares(holding.shares)} oz · avg cost ${fmt$(holding.avg_cost)}/oz · value ${fmt$(holding.market_value)}`
-      : 'You hold no ' + m.name;
-
-    document.getElementById('mt-spot-display').textContent = m.price != null ? `${fmt$(m.price)}/oz` : '—';
+      ? `You hold ${fmtShares(holding.shares)} ${unitLbl} · avg ${fmt$(holding.avg_cost)} · value ${fmt$(holding.market_value)}`
+      : `You hold no ${m.name}`;
+    document.getElementById('mt-spot-display').textContent = m.price != null ? `${fmt$(m.price)}/${unitLbl}` : '—';
     const avail = portData.available_cash ?? portData.cash_balance;
     document.getElementById('mt-cash').textContent = fmt$(avail);
     document.getElementById('mt-oz').value = '';
     document.getElementById('mt-total').textContent = '$0.00';
     document.getElementById('metals-error').textContent = '';
-    setMetalsTradeType(metalsTradeType, holding);
+    setSpotTradeType(spotTradeType, holding);
     requestAnimationFrame(() => document.getElementById('mt-oz').focus());
   }
 
-  function setMetalsTradeType(type, holding) {
-    metalsTradeType = type;
-    const buyTab  = document.getElementById('mt-buy-tab');
+  function setSpotTradeType(type, holding) {
+    spotTradeType = type;
+    metalsTradeType = type; // keep legacy alias in sync
+    const buyTab = document.getElementById('mt-buy-tab');
     const sellTab = document.getElementById('mt-sell-tab');
-    const btn     = document.getElementById('mt-submit-btn');
-    const label   = document.getElementById('mt-submit-label');
+    const btn    = document.getElementById('mt-submit-btn');
+    const label  = document.getElementById('mt-submit-label');
     buyTab.classList.toggle('active', type==='buy');
     sellTab.classList.toggle('active', type==='sell');
     if (type==='buy') { btn.className='btn btn-full btn-green'; label.textContent='Buy'; }
     else              { btn.className='btn btn-full btn-red';   label.textContent='Sell'; }
-    updateMetalsTotal();
+    updateSpotTotal();
   }
 
-  function updateMetalsTotal() {
-    const oz    = parseFloat(document.getElementById('mt-oz').value) || 0;
-    const price = selectedMetal?.price ?? 0;
-    document.getElementById('mt-total').textContent = fmt$(oz * price);
+  function updateSpotTotal() {
+    const qty   = parseFloat(document.getElementById('mt-oz').value) || 0;
+    const price = selectedSpotAsset?.price ?? 0;
+    document.getElementById('mt-total').textContent = fmt$(qty * price);
   }
 
-  function setMaxMetalsOz() {
-    if (!selectedMetal || !portfolio) return;
-    if (metalsTradeType === 'buy') {
-      const price = selectedMetal.price ?? 0;
+  function setMaxSpotQty() {
+    if (!selectedSpotAsset || !portfolio) return;
+    if (spotTradeType === 'buy') {
+      const price = selectedSpotAsset.price ?? 0;
       if (!price) return;
       const avail = portfolio.available_cash ?? portfolio.cash_balance;
-      document.getElementById('mt-oz').value = Math.floor((avail / price) * 1000) / 1000;
+      document.getElementById('mt-oz').value = Math.floor((avail / price) * 1000000) / 1000000;
     } else {
-      const h = portfolio.holdings?.find(h => h.symbol === selectedMetal.symbol);
+      const h = portfolio.holdings?.find(h => h.symbol === selectedSpotAsset.symbol);
       document.getElementById('mt-oz').value = h ? h.shares : 0;
     }
-    updateMetalsTotal();
+    updateSpotTotal();
   }
 
-  async function executeMetal() {
-    if (!selectedMetal || !currentGameId) return;
-    const oz     = parseFloat(document.getElementById('mt-oz').value);
+  async function executeSpot() {
+    if (!selectedSpotAsset || !currentGameId) return;
+    const qty    = parseFloat(document.getElementById('mt-oz').value);
     const errEl  = document.getElementById('metals-error');
     const btn    = document.getElementById('mt-submit-btn');
     errEl.textContent = '';
-    if (!oz || oz <= 0) { errEl.textContent = 'Enter a valid quantity.'; return; }
+    if (!qty || qty <= 0) { errEl.textContent = 'Enter a valid quantity.'; return; }
     btn.disabled = true;
     try {
-      const route = metalsTradeType === 'buy' ? 'buy' : 'sell';
-      const data  = await api('POST', `/api/games/${currentGameId}/metals/${route}`, { symbol: selectedMetal.symbol, oz });
+      const prefix = spotApiPrefix(selectedSpotAsset._type);
+      const isMetal = selectedSpotAsset._type === 'metal';
+      const body    = isMetal ? { symbol: selectedSpotAsset.symbol, oz: qty } : { symbol: selectedSpotAsset.symbol, quantity: qty };
+      const route   = spotTradeType === 'buy' ? 'buy' : 'sell';
+      const data    = await api('POST', `/api/games/${currentGameId}/${prefix}/${route}`, body);
       toast(data.message, 'success');
-      portfolio = null; // force refresh
-      await loadMetals();
+      portfolio = null;
+      await loadMarkets();
     } catch(err) { errEl.textContent = err.message; }
     finally { btn.disabled = false; }
   }
 
-  // Sell modal triggered from portfolio metals card
-  let msSymbol = null, msMaxOz = 0, msPrice = 0, msName = '';
-  function openMetalSellModal(symbol, oz, price, name) {
-    if (currentGame?.allow_metals) {
-      selectMetal(symbol);
-      navigate('metals');
-      setTimeout(() => setMetalsTradeType('sell'), 100);
-    }
+  // Open sell panel from portfolio holdings cards
+  function openSpotSellModal(symbol, qty, price, name, type) {
+    navigate('markets');
+    setTimeout(() => {
+      const sType = type || spotType(symbol);
+      if (!sType) return;
+      const cat = sType==='metal'?'metals':sType==='forex'?'forex':'crypto';
+      loadMarkets(cat).then(() => {
+        selectSpotAsset(symbol);
+        setTimeout(() => setSpotTradeType('sell'), 150);
+      });
+    }, 50);
   }
+
+  // Legacy aliases kept for any remaining references
+  function selectMetal(symbol) { selectSpotAsset(symbol); }
+  function setMetalsTradeType(type, holding) { setSpotTradeType(type, holding); }
+  function updateMetalsTotal() { updateSpotTotal(); }
+  function setMaxMetalsOz() { setMaxSpotQty(); }
+  async function executeMetal() { return executeSpot(); }
+  function openMetalSellModal(symbol, oz, price, name) { openSpotSellModal(symbol, oz, price, name, 'metal'); }
 
   // ── History ────────────────────────────────────────────────────────────────
   async function loadHistory() {
@@ -2254,9 +2414,14 @@ const App = (() => {
         api('GET',`/api/games/${currentGameId}/trades/history`),
         currentGame?.allow_futures ? api('GET',`/api/games/${currentGameId}/futures/history`) : Promise.resolve([])
       ]);
-      const metalSymSet = new Set(metalsList.map(m => m.symbol));
-      const stockTxns = txns.filter(t => !metalSymSet.has(t.symbol));
-      const metalTxns = txns.filter(t =>  metalSymSet.has(t.symbol));
+      const _metalSet  = new Set(metalsList.map(m => m.symbol));
+      const _forexSet  = new Set(forexList.map(f => f.symbol));
+      const _cryptoSet = new Set(cryptoList.map(c => c.symbol));
+      const _allSpot   = new Set([..._metalSet, ..._forexSet, ..._cryptoSet]);
+      const stockTxns  = txns.filter(t => !_allSpot.has(t.symbol));
+      const metalTxns  = txns.filter(t => _metalSet.has(t.symbol));
+      const forexTxns  = txns.filter(t => _forexSet.has(t.symbol));
+      const cryptoTxns = txns.filter(t => _cryptoSet.has(t.symbol));
 
       const tbody=document.getElementById('history-body');
       if(!stockTxns.length){tbody.innerHTML='';document.getElementById('history-empty').style.display='';}
@@ -2284,19 +2449,28 @@ const App = (() => {
           </tr>`).join('');}
       } else { fCard.style.display='none'; }
 
-      const mhCard=document.getElementById('metals-history-card'),mhb=document.getElementById('metals-history-body');
-      if(currentGame?.allow_metals){mhCard.style.display='';
-        if(!metalTxns.length){mhb.innerHTML='';document.getElementById('metals-history-empty').style.display='';}
-        else{document.getElementById('metals-history-empty').style.display='none';
-          mhb.innerHTML=metalTxns.map(t=>`<tr>
+      function renderSpotHistory(cardId, bodyId, emptyId, txns2, unitLabel) {
+        const card = document.getElementById(cardId);
+        const body = document.getElementById(bodyId);
+        card.style.display = '';
+        if (!txns2.length) { body.innerHTML=''; document.getElementById(emptyId).style.display=''; }
+        else { document.getElementById(emptyId).style.display='none';
+          body.innerHTML=txns2.map(t=>`<tr>
             <td class="muted">${fmtDate(t.executed_at)}</td>
             <td><span class="pill pill-${t.type==='buy'?'buy':'sell'}">${t.type.toUpperCase()}</span></td>
             <td><strong>${esc(t.company_name||t.symbol)}</strong></td>
-            <td class="text-right">${fmtShares(t.shares)} oz</td>
-            <td class="text-right">${fmt$(t.price)}/oz</td>
+            <td class="text-right">${fmtShares(t.shares)} ${unitLabel}</td>
+            <td class="text-right">${fmt$(t.price)}</td>
             <td class="text-right ${t.type==='buy'?'red':'green'}">${t.type==='buy'?'−':'+'}${fmt$(t.total)}</td>
-          </tr>`).join('');}
-      } else { mhCard.style.display='none'; }
+          </tr>`).join('');
+        }
+      }
+      if (currentGame?.allow_metals)  renderSpotHistory('metals-history-card', 'metals-history-body', 'metals-history-empty', metalTxns,  'oz');
+      else document.getElementById('metals-history-card').style.display='none';
+      if (currentGame?.allow_forex)   renderSpotHistory('forex-history-card',  'forex-history-body',  'forex-history-empty',  forexTxns,  'units');
+      else document.getElementById('forex-history-card').style.display='none';
+      if (currentGame?.allow_crypto)  renderSpotHistory('crypto-history-card', 'crypto-history-body', 'crypto-history-empty', cryptoTxns, 'coins');
+      else document.getElementById('crypto-history-card').style.display='none';
     } catch(err){console.error(err);}
   }
 
@@ -2307,7 +2481,7 @@ const App = (() => {
       // Games list
       document.getElementById('admin-games-list').innerHTML = games.length ? `
         <div class="table-wrap"><table>
-          <thead><tr><th>Title</th><th>Status</th><th>Dates</th><th>Starting Cash</th><th>Players</th><th>Futures</th><th>Metals</th><th></th></tr></thead>
+          <thead><tr><th>Title</th><th>Status</th><th>Dates</th><th>Starting Cash</th><th>Players</th><th>Futures</th><th>Metals</th><th>Forex</th><th>Crypto</th><th></th></tr></thead>
           <tbody>${games.map(g=>`<tr>
             <td><strong>${esc(g.title)}</strong>${g.is_private?` <span title="Password protected" style="color:var(--gold)">🔒</span>`:''}</td>
             <td><span class="badge-status badge-${g.status}">${g.status.toUpperCase()}</span>${g.is_active?'':' <span class="muted">(hidden)</span>'}</td>
@@ -2316,6 +2490,8 @@ const App = (() => {
             <td>${g.player_count}</td>
             <td>${g.allow_futures?'<span class="green">✓</span>':'<span class="muted">—</span>'}</td>
             <td>${g.allow_metals?'<span style="color:var(--gold)">✓</span>':'<span class="muted">—</span>'}</td>
+            <td>${g.allow_forex?'<span class="green">✓</span>':'<span class="muted">—</span>'}</td>
+            <td>${g.allow_crypto?'<span class="green">✓</span>':'<span class="muted">—</span>'}</td>
             <td><div style="display:flex;gap:5px">
               <button class="btn btn-ghost btn-sm" data-id="${g.id}" data-title="${esc(g.title)}" onclick="App.openGamePlayersModal(parseInt(this.dataset.id),this.dataset.title)">👥 Players</button>
               <button class="btn btn-ghost btn-sm" onclick="App.editGame(${g.id})">Edit</button>
@@ -2372,6 +2548,8 @@ const App = (() => {
       document.getElementById('admin-fractional').checked=!!g.allow_fractional;
       document.getElementById('admin-futures').checked=!!g.allow_futures;
       document.getElementById('admin-metals').checked=!!g.allow_metals;
+      document.getElementById('admin-forex').checked=!!g.allow_forex;
+      document.getElementById('admin-crypto').checked=!!g.allow_crypto;
       document.getElementById('admin-active').checked=!!g.is_active;
       document.getElementById('admin-private').checked=!!g.is_private;
       document.getElementById('admin-join-password').value=g.join_password||'';
@@ -2395,6 +2573,8 @@ const App = (() => {
     document.getElementById('admin-fractional').checked=true;
     document.getElementById('admin-futures').checked=false;
     document.getElementById('admin-metals').checked=false;
+    document.getElementById('admin-forex').checked=false;
+    document.getElementById('admin-crypto').checked=false;
     document.getElementById('admin-active').checked=true;
     document.getElementById('admin-private').checked=false;
     document.getElementById('admin-join-password').value='';
@@ -2420,6 +2600,8 @@ const App = (() => {
       markets, allow_fractional:document.getElementById('admin-fractional').checked,
       allow_futures:document.getElementById('admin-futures').checked,
       allow_metals:document.getElementById('admin-metals').checked,
+      allow_forex:document.getElementById('admin-forex').checked,
+      allow_crypto:document.getElementById('admin-crypto').checked,
       is_active:document.getElementById('admin-active').checked,
       is_private:document.getElementById('admin-private').checked,
       join_password:document.getElementById('admin-join-password').value.trim()||undefined,
@@ -2912,6 +3094,7 @@ const App = (() => {
     setTradeType, executeTrade, setMaxShares, updateTradeTotal, onOrderTypeChange, cancelOrder,
     filterFutures, selectFutures, setFuturesDir, updateFuturesTotal, updateFuturesSim, setMaxFuturesContracts, openFuturesPosition,
     openSellModal, closeSellModal, updateSellModalTotal, setSellModalMax, executeSellModal,
+    loadMarkets, selectSpotAsset, setSpotTradeType, updateSpotTotal, setMaxSpotQty, executeSpot, openSpotSellModal,
     selectMetal, setMetalsTradeType, updateMetalsTotal, setMaxMetalsOz, executeMetal, openMetalSellModal,
     openCloseFuturesModal, closeCloseFuturesModal, updateCfmTotal, setCfmMax, executeClosePosition,
     saveSmtpSettings, sendSmtpTest,
