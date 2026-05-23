@@ -1909,7 +1909,11 @@ setInterval(async () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function gitRun(cmd) {
-  return execSync(`git -C "${__dirname}" ${cmd}`, { encoding: 'utf8', timeout: 30_000 }).trim();
+  return execSync(`git -C "${__dirname}" ${cmd}`, {
+    encoding: 'utf8',
+    timeout: 60_000,
+    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }, // never hang waiting for password
+  }).trim();
 }
 
 // Check if there are updates available (runs git fetch)
@@ -1925,7 +1929,8 @@ app.get('/api/admin/update/status', requireAdmin, (req, res) => {
     const changelog  = upToDate ? [] : gitRun(`log --oneline HEAD..origin/${branch}`).split('\n').filter(Boolean).slice(0, 30);
     res.json({ up_to_date: upToDate, current_short: currentSha.slice(0, 7), remote_short: remoteSha.slice(0, 7), branch, changelog });
   } catch (err) {
-    res.status(500).json({ error: `Git check failed: ${err.message.split('\n')[0]}` });
+    const detail = (err.stderr || err.message || '').split('\n').find(l => l.trim()) || err.message;
+    res.status(500).json({ error: `Git check failed: ${detail}` });
   }
 });
 
