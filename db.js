@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import { fileURLToPath } from 'url';
 import path from 'path';
+import crypto from 'crypto';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // DB_PATH override lets the test suite point at a throwaway database
@@ -190,6 +191,19 @@ try {
 
 // Migrate: approve all pre-existing users so nobody gets locked out on upgrade
 try { db.prepare("UPDATE users SET is_approved = 1 WHERE is_approved = 0").run(); } catch {}
+
+// Migrate: API keys created before key_hash/key_preview existed have key_value set
+// to the plaintext "ska_..." key and NULL key_hash. requireAuth now looks up keys by
+// key_hash, so those legacy keys would 401 forever — backfill hash/preview from the
+// stored plaintext so existing keys keep working.
+try {
+  const legacyKeys = db.prepare("SELECT id, key_value FROM api_keys WHERE key_hash IS NULL AND key_value LIKE 'ska_%'").all();
+  const backfill = db.prepare('UPDATE api_keys SET key_hash = ?, key_preview = ? WHERE id = ?');
+  for (const row of legacyKeys) {
+    const hash = crypto.createHash('sha256').update(row.key_value).digest('hex');
+    backfill.run(hash, row.key_value.slice(0, 12) + '…', row.id);
+  }
+} catch {}
 
 // ── Indexes — created AFTER migrations so all columns exist ──────────────────
 // Each index is individually wrapped so a missing column never crashes startup.
