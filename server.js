@@ -315,7 +315,6 @@ const PRECIOUS_METALS = [
   { symbol: 'PL=F', name: 'Platinum',  unit: 'oz', description: 'NYMEX platinum per troy ounce' },
   { symbol: 'PA=F', name: 'Palladium', unit: 'oz', description: 'NYMEX palladium per troy ounce' },
 ];
-const METAL_SYMBOLS = new Set(PRECIOUS_METALS.map(m => m.symbol));
 
 // ── Forex spot pairs ──────────────────────────────────────────────────────────
 const FOREX_PAIRS = [
@@ -334,7 +333,6 @@ const FOREX_PAIRS = [
   { symbol: 'USDCNY=X', name: 'USD/CNY', category: 'Emerging', description: 'US Dollar vs Chinese Yuan' },
   { symbol: 'USDBRL=X', name: 'USD/BRL', category: 'Emerging', description: 'US Dollar vs Brazilian Real' },
 ];
-const FOREX_SYMBOLS = new Set(FOREX_PAIRS.map(f => f.symbol));
 
 // ── Crypto spot assets ────────────────────────────────────────────────────────
 const CRYPTO_ASSETS = [
@@ -350,10 +348,6 @@ const CRYPTO_ASSETS = [
   { symbol: 'DOT-USD',  name: 'Polkadot',  description: 'Multi-chain interoperability protocol' },
   { symbol: 'LINK-USD', name: 'Chainlink', description: 'Decentralized oracle data network' },
 ];
-const CRYPTO_SYMBOLS = new Set(CRYPTO_ASSETS.map(c => c.symbol));
-
-// Combined set of all non-stock spot symbols (used for portfolio filtering)
-const ALL_SPOT_SYMBOLS = new Set([...METAL_SYMBOLS, ...FOREX_SYMBOLS, ...CRYPTO_SYMBOLS]);
 
 // ── US Market hours (America/New_York) ───────────────────────────────────────
 function getEasternParts() {
@@ -478,13 +472,18 @@ function loadGame(req, res, next) {
   }
 }
 
-function ensurePortfolio(userId, gameId, startingCash) {
-  let p = db.prepare('SELECT * FROM portfolios WHERE user_id = ? AND game_id = ?').get(userId, gameId);
-  if (!p) {
-    db.prepare('INSERT INTO portfolios (user_id, game_id, cash_balance) VALUES (?, ?, ?)').run(userId, gameId, startingCash);
-    p = db.prepare('SELECT * FROM portfolios WHERE user_id = ? AND game_id = ?').get(userId, gameId);
-  }
-  return p;
+// Trading gate — requires an approved account AND an existing portfolio (i.e. the
+// user actually joined the game through /join, passing any private-game password).
+// Never auto-creates portfolios: that would bypass approval and join passwords.
+function requireJoined(req, res, next) {
+  const dbUser = db.prepare('SELECT is_approved FROM users WHERE id = ?').get(req.user.id);
+  if (!dbUser?.is_approved)
+    return res.status(403).json({ error: 'Your account is pending admin approval.' });
+  const p = db.prepare('SELECT * FROM portfolios WHERE user_id = ? AND game_id = ?').get(req.user.id, req.game.id);
+  if (!p)
+    return res.status(403).json({ error: 'not_joined', message: 'Join this game before trading.' });
+  req.portfolio = p;
+  next();
 }
 
 // Sum of cash held by pending buy orders — these funds are reserved and unavailable.
@@ -492,6 +491,13 @@ function pendingReserved(userId, gameId) {
   return db.prepare(
     "SELECT COALESCE(SUM(reserved_amount),0) as total FROM pending_orders WHERE user_id=? AND game_id=? AND type='buy' AND status='pending'"
   ).get(userId, gameId)?.total ?? 0;
+}
+
+// Shares of a symbol already committed to pending sell orders — can't be sold twice.
+function pendingSellShares(userId, gameId, symbol) {
+  return db.prepare(
+    "SELECT COALESCE(SUM(shares),0) as total FROM pending_orders WHERE user_id=? AND game_id=? AND symbol=? AND type='sell' AND status='pending'"
+  ).get(userId, gameId, symbol)?.total ?? 0;
 }
 
 // Cash the user can actually spend: balance minus anything locked in pending buys.
@@ -564,9 +570,10 @@ app.post('/api/auth/logout', requireAuth, (req, res) => {
 
 // List keys for the authenticated user (key values are masked after creation)
 app.get('/api/user/api-keys', requireAuth, (req, res) => {
-  const keys = db.prepare('SELECT id, label, key_value, created_at, last_used FROM api_keys WHERE user_id = ? ORDER BY created_at DESC').all(req.user.id);
-  // Return only the first 8 chars + '...' so users can identify keys without exposing them
-  res.json(keys.map(k => ({ ...k, key_preview: k.key_value.slice(0, 12) + '…', key_value: undefined })));
+  const keys = db.prepare('SELECT id, label, key_preview, created_at, last_used FROM api_keys WHERE user_id = ? ORDER BY created_at DESC').all(req.user.id);
+  // key_preview is the first 12 chars of the real key (e.g. "ska_3f9a…"), stored at creation;
+  // legacy rows created before key hashing have no preview to show
+  res.json(keys.map(k => ({ ...k, key_preview: k.key_preview || '(legacy key)' })));
 });
 
 // Generate a new API key — returns the full key ONCE; not stored in plaintext after this response
@@ -797,11 +804,11 @@ app.post('/api/games/:gameId/join', requireAuth, loadGame, (req, res) => {
     const supplied = req.body?.join_password?.trim();
     if (!supplied) return res.status(403).json({ error: 'private_game', message: 'This game is password-protected. Enter the join password.' });
     const storedPw = decryptField(fullGame.join_password) ?? fullGame.join_password;
-    // Use timing-safe comparison to prevent timing attacks
-    const sBuf = Buffer.from(supplied.padEnd(storedPw.length, '\0'));
-    const dBuf = Buffer.from(storedPw.padEnd(supplied.length, '\0'));
-    const same = sBuf.length === dBuf.length && crypto.timingSafeEqual(sBuf, dBuf);
-    if (!same)
+    // Hash both sides before timingSafeEqual — constant time regardless of length,
+    // and leaks nothing about the password's length
+    const sHash = crypto.createHash('sha256').update(supplied).digest();
+    const dHash = crypto.createHash('sha256').update(storedPw).digest();
+    if (!crypto.timingSafeEqual(sHash, dHash))
       return res.status(403).json({ error: 'wrong_password', message: 'Incorrect join password.' });
   }
 
@@ -812,6 +819,12 @@ app.post('/api/games/:gameId/join', requireAuth, loadGame, (req, res) => {
 // Leaderboard
 app.get('/api/games/:gameId/leaderboard', requireAuth, loadGame, async (req, res) => {
   const game = req.game;
+  // Private games: only members and admins may view standings (prevents username leak)
+  if (game.is_private) {
+    const joined  = !!db.prepare('SELECT id FROM portfolios WHERE user_id = ? AND game_id = ?').get(req.user.id, game.id);
+    const isAdmin = !!db.prepare('SELECT is_admin FROM users WHERE id = ?').get(req.user.id)?.is_admin;
+    if (!joined && !isAdmin) return res.status(404).json({ error: 'Game not found' });
+  }
   const portfolios = db.prepare('SELECT p.*, u.username FROM portfolios p JOIN users u ON p.user_id = u.id WHERE p.game_id = ?').all(game.id);
   const holdings   = db.prepare('SELECT * FROM holdings WHERE game_id = ? AND shares > 0').all(game.id);
   const futures    = game.allow_futures
@@ -988,12 +1001,14 @@ function applyFill(userId, gameId, symbol, companyName, type, shares, price) {
         db.prepare('INSERT INTO holdings (user_id,game_id,symbol,company_name,shares,avg_cost) VALUES (?,?,?,?,?,?)').run(userId, gameId, symbol, companyName, shares, price);
       }
     } else {
+      // Atomic conditional deduct — WHERE shares >= requested guarantees the same
+      // shares can't be sold twice under concurrent requests or stale pre-checks.
+      const result = db.prepare(
+        `UPDATE holdings SET shares = CASE WHEN shares - ? < 0.000001 THEN 0 ELSE shares - ? END
+         WHERE user_id = ? AND game_id = ? AND symbol = ? AND shares >= ? - 0.000001`
+      ).run(shares, shares, userId, gameId, symbol, shares);
+      if (result.changes === 0) throw new Error(`Insufficient shares of ${symbol}`);
       db.prepare('UPDATE portfolios SET cash_balance = cash_balance + ? WHERE user_id = ? AND game_id = ?').run(total, userId, gameId);
-      const h = db.prepare('SELECT * FROM holdings WHERE user_id = ? AND game_id = ? AND symbol = ?').get(userId, gameId, symbol);
-      if (h) {
-        const rem = h.shares - shares;
-        db.prepare('UPDATE holdings SET shares=? WHERE id=?').run(rem < 0.000001 ? 0 : rem, h.id);
-      }
     }
     db.prepare('INSERT INTO transactions (user_id,game_id,symbol,company_name,type,shares,price,total) VALUES (?,?,?,?,?,?,?,?)')
       .run(userId, gameId, symbol, companyName, type, shares, price, total);
@@ -1006,7 +1021,7 @@ app.get('/api/market/status', requireAuth, (req, res) => res.json(marketStatus()
 
 // ── Unified order submission ───────────────────────────────────────────────────
 // order_type: 'market' | 'limit'   type: 'buy' | 'sell'
-app.post('/api/games/:gameId/orders', requireAuth, loadGame, async (req, res) => {
+app.post('/api/games/:gameId/orders', requireAuth, loadGame, requireJoined, async (req, res) => {
   const game = req.game;
   let { symbol, type, order_type, shares, limit_price } = req.body || {};
   symbol = symbol?.toUpperCase(); shares = parseFloat(shares); limit_price = limit_price ? parseFloat(limit_price) : null;
@@ -1030,15 +1045,19 @@ app.post('/api/games/:gameId/orders', requireAuth, loadGame, async (req, res) =>
   if (!isExchangeAllowed(quote.exchange, game.markets))
     return res.status(400).json({ error: `${symbol} (${quote.exchange}) is not in the allowed markets: ${game.markets.join(', ')}` });
 
-  // For sell orders: verify the user actually owns the shares now
+  // For sell orders: verify the user owns the shares, net of shares already
+  // committed to other pending sell orders (no double-selling via the queue)
   if (type === 'sell') {
-    const holding = db.prepare('SELECT * FROM holdings WHERE user_id = ? AND game_id = ? AND symbol = ?').get(req.user.id, game.id, symbol);
-    if (!holding || holding.shares < shares - 0.000001)
-      return res.status(400).json({ error: `Insufficient shares — you own ${holding ? holding.shares.toFixed(4) : 0} share(s) of ${symbol}` });
+    const holding   = db.prepare('SELECT * FROM holdings WHERE user_id = ? AND game_id = ? AND symbol = ?').get(req.user.id, game.id, symbol);
+    const committed = pendingSellShares(req.user.id, game.id, symbol);
+    const owned     = holding?.shares ?? 0;
+    if (owned - committed < shares - 0.000001)
+      return res.status(400).json({ error: `Insufficient shares — you own ${owned.toFixed(4)} share(s) of ${symbol}` +
+        (committed > 0 ? ` (${committed.toFixed(4)} already committed to pending sell orders)` : '') });
   }
 
   const open = isMarketOpen();
-  const portfolio = ensurePortfolio(req.user.id, game.id, game.starting_cash);
+  const portfolio = req.portfolio;
 
   // Market order + market open → fill immediately using available cash
   if (order_type === 'market' && open) {
@@ -1102,7 +1121,7 @@ app.delete('/api/games/:gameId/orders/:orderId', requireAuth, loadGame, (req, re
 });
 
 // Legacy buy/sell routes → delegate to the unified order endpoint handler
-app.post('/api/games/:gameId/trades/buy', requireAuth, loadGame, async (req, res) => {
+app.post('/api/games/:gameId/trades/buy', requireAuth, loadGame, requireJoined, async (req, res) => {
   req.body = { ...req.body, type: 'buy', order_type: 'market' };
   // Re-use the /orders handler logic by internally redirecting
   const fakeReq = { ...req, params: req.params };
@@ -1114,7 +1133,7 @@ app.post('/api/games/:gameId/trades/buy', requireAuth, loadGame, async (req, res
   if (game.status !== 'active') return res.status(400).json({ error: game.status === 'pending' ? 'Game has not started yet' : 'Game has ended' });
   let quote; try { quote = await getQuote(symbol); } catch { return res.status(400).json({ error: 'Unable to fetch quote — symbol may be invalid or market data unavailable' }); }
   if (!isExchangeAllowed(quote.exchange, game.markets)) return res.status(400).json({ error: `${symbol} not in allowed markets` });
-  const portfolio   = ensurePortfolio(req.user.id, game.id, game.starting_cash);
+  const portfolio   = req.portfolio;
   const cost        = +(quote.price * shares).toFixed(6);
   const avail       = availableCash(req.user.id, game.id, portfolio);
   if (cost > avail) return res.status(400).json({ error: `Insufficient funds — cost $${cost.toFixed(2)}, available $${avail.toFixed(2)}` });
@@ -1128,14 +1147,15 @@ app.post('/api/games/:gameId/trades/buy', requireAuth, loadGame, async (req, res
   res.json({ filled: true, message: `Bought ${shares} share(s) of ${symbol} at $${quote.price.toFixed(2)}`, cash_balance: updated.cash_balance, total_cost: cost });
 });
 
-app.post('/api/games/:gameId/trades/sell', requireAuth, loadGame, async (req, res) => {
+app.post('/api/games/:gameId/trades/sell', requireAuth, loadGame, requireJoined, async (req, res) => {
   const game = req.game;
   let { symbol, shares } = req.body || {};
   symbol = symbol?.toUpperCase(); shares = parseFloat(shares);
   if (!symbol || isNaN(shares) || shares <= 0) return res.status(400).json({ error: 'symbol and positive shares are required' });
   if (game.status !== 'active') return res.status(400).json({ error: game.status === 'pending' ? 'Game has not started yet' : 'Game has ended' });
-  const holding = db.prepare('SELECT * FROM holdings WHERE user_id = ? AND game_id = ? AND symbol = ?').get(req.user.id, game.id, symbol);
-  if (!holding || holding.shares < shares - 0.000001) return res.status(400).json({ error: `Insufficient shares — you own ${holding ? holding.shares.toFixed(4) : 0} share(s) of ${symbol}` });
+  const holding   = db.prepare('SELECT * FROM holdings WHERE user_id = ? AND game_id = ? AND symbol = ?').get(req.user.id, game.id, symbol);
+  const committed = pendingSellShares(req.user.id, game.id, symbol);
+  if (!holding || holding.shares - committed < shares - 0.000001) return res.status(400).json({ error: `Insufficient shares — you own ${holding ? holding.shares.toFixed(4) : 0} share(s) of ${symbol}` + (committed > 0 ? ` (${committed.toFixed(4)} committed to pending sells)` : '') });
   let quote; try { quote = await getQuote(symbol); } catch { return res.status(400).json({ error: 'Unable to fetch quote — symbol may be invalid or market data unavailable' }); }
   if (!isMarketOpen()) {
     const { lastInsertRowid } = db.prepare('INSERT INTO pending_orders (user_id,game_id,symbol,company_name,type,order_type,shares) VALUES (?,?,?,?,?,?,?)')
@@ -1156,17 +1176,7 @@ app.get('/api/games/:gameId/trades/history', requireAuth, loadGame, (req, res) =
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // All available futures contracts with live prices
-app.get('/api/futures/contracts', requireAuth, async (req, res) => {
-  const enriched = await Promise.all(FUTURES_CONTRACTS.map(async c => {
-    try {
-      const q = await getQuote(c.symbol);
-      return { ...c, price: q.price, change: q.change, changePercent: q.changePercent, marketState: q.marketState };
-    } catch {
-      return { ...c, price: null, change: 0, changePercent: 0, marketState: 'CLOSED' };
-    }
-  }));
-  res.json(enriched);
-});
+app.get('/api/futures/contracts', requireAuth, priceListHandler(FUTURES_CONTRACTS));
 
 // User's open futures positions for a game
 app.get('/api/games/:gameId/futures/positions', requireAuth, loadGame, async (req, res) => {
@@ -1185,7 +1195,7 @@ app.get('/api/games/:gameId/futures/positions', requireAuth, loadGame, async (re
 });
 
 // Open (or add to) a futures position
-app.post('/api/games/:gameId/futures/open', requireAuth, loadGame, async (req, res) => {
+app.post('/api/games/:gameId/futures/open', requireAuth, loadGame, requireJoined, async (req, res) => {
   const game = req.game;
   if (!game.allow_futures) return res.status(400).json({ error: 'Futures trading is not enabled in this game' });
   if (game.status === 'pending') return res.status(400).json({ error: 'Game has not started yet' });
@@ -1212,7 +1222,7 @@ app.post('/api/games/:gameId/futures/open', requireAuth, loadGame, async (req, r
 
   const marginNeeded = +(contracts * quote.price * game.futures_margin).toFixed(6);
   if (!validTotal(marginNeeded)) return res.status(400).json({ error: 'Invalid margin calculation — check contracts and price' });
-  const portfolio    = ensurePortfolio(req.user.id, game.id, game.starting_cash);
+  const portfolio    = req.portfolio;
   if (marginNeeded > portfolio.cash_balance)
     return res.status(400).json({ error: `Insufficient margin — required $${marginNeeded.toFixed(2)}, available $${portfolio.cash_balance.toFixed(2)}` });
 
@@ -1238,7 +1248,7 @@ app.post('/api/games/:gameId/futures/open', requireAuth, loadGame, async (req, r
 });
 
 // Close (or reduce) a futures position
-app.post('/api/games/:gameId/futures/close', requireAuth, loadGame, async (req, res) => {
+app.post('/api/games/:gameId/futures/close', requireAuth, loadGame, requireJoined, async (req, res) => {
   const game = req.game;
   if (!game.allow_futures) return res.status(400).json({ error: 'Futures trading is not enabled in this game' });
   if (game.status === 'pending') return res.status(400).json({ error: 'Game has not started yet' });
@@ -1261,8 +1271,10 @@ app.post('/api/games/:gameId/futures/close', requireAuth, loadGame, async (req, 
   let quote;
   try { quote = await getQuote(symbol); } catch { return res.status(400).json({ error: 'Unable to fetch quote — symbol may be invalid or market data unavailable' }); }
 
-  const pnl              = (position.direction === 'long' ? (quote.price - position.entry_price) : (position.entry_price - quote.price)) * contracts;
+  const rawPnl           = (position.direction === 'long' ? (quote.price - position.entry_price) : (position.entry_price - quote.price)) * contracts;
   const proportionMargin = (contracts / position.contracts) * position.margin_held;
+  // Loss is capped at the margin posted for these contracts — cash return never negative
+  const pnl              = Math.max(rawPnl, -proportionMargin);
   const cashReturn       = +(proportionMargin + pnl).toFixed(6);
 
   db.transaction(() => {
@@ -1289,219 +1301,72 @@ app.get('/api/games/:gameId/futures/history', requireAuth, loadGame, (req, res) 
 // PRECIOUS METALS (per game)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-app.get('/api/metals/list', requireAuth, async (req, res) => {
-  const enriched = await Promise.all(PRECIOUS_METALS.map(async m => {
-    try {
-      const q = await getQuote(m.symbol);
-      return { ...m, price: q.price, change: q.change, changePercent: q.changePercent, marketState: q.marketState };
-    } catch {
-      return { ...m, price: null, change: 0, changePercent: 0, marketState: 'CLOSED' };
-    }
-  }));
-  res.json(enriched);
-});
+// One factory registers list/buy/sell for each spot asset class (metals, forex,
+// crypto) — identical flow, different catalogue/flag/quantity field.
+function priceListHandler(catalogue) {
+  return async (req, res) => {
+    const enriched = await Promise.all(catalogue.map(async item => {
+      try {
+        const q = await getQuote(item.symbol);
+        return { ...item, price: q.price, change: q.change, changePercent: q.changePercent, marketState: q.marketState };
+      } catch {
+        return { ...item, price: null, change: 0, changePercent: 0, marketState: 'CLOSED' };
+      }
+    }));
+    res.json(enriched);
+  };
+}
 
-app.post('/api/games/:gameId/metals/buy', requireAuth, loadGame, async (req, res) => {
-  const game = req.game;
-  if (!game.allow_metals) return res.status(400).json({ error: 'Precious metals trading is not enabled in this game' });
-  if (game.status === 'pending') return res.status(400).json({ error: 'Game has not started yet' });
-  if (game.status === 'ended')   return res.status(400).json({ error: 'Game has ended — no more trades' });
+function registerSpotRoutes({ route, listPath, catalogue, flag, label, qtyField, unitSuffix, priceDecimals = 2, ownDecimals = 4, auditPrefix }) {
+  app.get(listPath, requireAuth, priceListHandler(catalogue));
 
-  let { symbol, oz } = req.body || {};
-  symbol = symbol?.toUpperCase(); oz = parseFloat(oz);
-  if (!symbol || isNaN(oz) || oz <= 0) return res.status(400).json({ error: 'symbol and positive oz are required' });
-  if (!validSymbol(symbol)) return res.status(400).json({ error: 'Invalid symbol format' });
-  if (!validShares(oz))     return res.status(400).json({ error: 'Quantity must be between 0 and 1,000,000' });
+  // Shared validation — returns { symbol, qty, asset } or null after sending an error response
+  const validate = (req, res) => {
+    const game = req.game;
+    if (!game[flag]) { res.status(400).json({ error: `${label} trading is not enabled in this game` }); return null; }
+    if (game.status === 'pending') { res.status(400).json({ error: 'Game has not started yet' }); return null; }
+    if (game.status === 'ended')   { res.status(400).json({ error: 'Game has ended — no more trades' }); return null; }
+    const symbol = req.body?.symbol?.toUpperCase();
+    const qty    = parseFloat(req.body?.[qtyField]);
+    if (!symbol || isNaN(qty) || qty <= 0) { res.status(400).json({ error: `symbol and positive ${qtyField} are required` }); return null; }
+    if (!validSymbol(symbol)) { res.status(400).json({ error: 'Invalid symbol format' }); return null; }
+    if (!validShares(qty))    { res.status(400).json({ error: 'Quantity must be between 0 and 1,000,000' }); return null; }
+    const asset = catalogue.find(a => a.symbol === symbol);
+    if (!asset) { res.status(400).json({ error: `${symbol} is not a supported ${label.toLowerCase()} asset` }); return null; }
+    return { symbol, qty, asset };
+  };
 
-  const metal = PRECIOUS_METALS.find(m => m.symbol === symbol);
-  if (!metal) return res.status(400).json({ error: `${symbol} is not a supported precious metal` });
+  app.post(`/api/games/:gameId/${route}/buy`, requireAuth, loadGame, requireJoined, async (req, res) => {
+    const v = validate(req, res); if (!v) return;
+    let quote;
+    try { quote = await getQuote(v.symbol); } catch { return res.status(400).json({ error: 'Unable to fetch price — market data unavailable' }); }
+    const cost = +(quote.price * v.qty).toFixed(6);
+    if (!validTotal(cost)) return res.status(400).json({ error: 'Invalid cost calculation' });
+    const avail = availableCash(req.user.id, req.game.id, req.portfolio);
+    if (cost > avail) return res.status(400).json({ error: `Insufficient funds — cost $${cost.toFixed(2)}, available $${avail.toFixed(2)}` });
+    applyFill(req.user.id, req.game.id, v.symbol, v.asset.name, 'buy', v.qty, quote.price);
+    const updated = db.prepare('SELECT * FROM portfolios WHERE user_id = ? AND game_id = ?').get(req.user.id, req.game.id);
+    audit(req, `${auditPrefix}_BUY`, `${v.qty}${unitSuffix} ${v.asset.name} @ ${quote.price.toFixed(priceDecimals)}`);
+    res.json({ filled: true, message: `Bought ${v.qty}${unitSuffix} of ${v.asset.name} at ${quote.price.toFixed(priceDecimals)}`, cash_balance: updated.cash_balance, total_cost: cost });
+  });
 
-  let quote;
-  try { quote = await getQuote(symbol); } catch { return res.status(400).json({ error: 'Unable to fetch price — market data unavailable' }); }
+  app.post(`/api/games/:gameId/${route}/sell`, requireAuth, loadGame, requireJoined, async (req, res) => {
+    const v = validate(req, res); if (!v) return;
+    const holding = db.prepare('SELECT * FROM holdings WHERE user_id = ? AND game_id = ? AND symbol = ?').get(req.user.id, req.game.id, v.symbol);
+    if (!holding || holding.shares < v.qty - 0.000001)
+      return res.status(400).json({ error: `Insufficient — you own ${holding ? holding.shares.toFixed(ownDecimals) : 0}${unitSuffix} of ${v.asset.name}` });
+    let quote;
+    try { quote = await getQuote(v.symbol); } catch { return res.status(400).json({ error: 'Unable to fetch price — market data unavailable' }); }
+    applyFill(req.user.id, req.game.id, v.symbol, v.asset.name, 'sell', v.qty, quote.price);
+    const updated = db.prepare('SELECT * FROM portfolios WHERE user_id = ? AND game_id = ?').get(req.user.id, req.game.id);
+    audit(req, `${auditPrefix}_SELL`, `${v.qty}${unitSuffix} ${v.asset.name} @ ${quote.price.toFixed(priceDecimals)}`);
+    res.json({ filled: true, message: `Sold ${v.qty}${unitSuffix} of ${v.asset.name} at ${quote.price.toFixed(priceDecimals)}`, cash_balance: updated.cash_balance });
+  });
+}
 
-  const portfolio = ensurePortfolio(req.user.id, game.id, game.starting_cash);
-  const cost = +(quote.price * oz).toFixed(6);
-  if (!validTotal(cost)) return res.status(400).json({ error: 'Invalid cost calculation' });
-  const avail = availableCash(req.user.id, game.id, portfolio);
-  if (cost > avail) return res.status(400).json({ error: `Insufficient funds — cost $${cost.toFixed(2)}, available $${avail.toFixed(2)}` });
-
-  applyFill(req.user.id, game.id, symbol, metal.name, 'buy', oz, quote.price);
-  const updated = db.prepare('SELECT * FROM portfolios WHERE user_id = ? AND game_id = ?').get(req.user.id, game.id);
-  audit(req, 'METALS_BUY', `${oz} oz ${metal.name} @ $${quote.price.toFixed(2)}`);
-  res.json({ filled: true, message: `Bought ${oz} oz of ${metal.name} at $${quote.price.toFixed(2)}/oz`, cash_balance: updated.cash_balance, total_cost: cost });
-});
-
-app.post('/api/games/:gameId/metals/sell', requireAuth, loadGame, async (req, res) => {
-  const game = req.game;
-  if (!game.allow_metals) return res.status(400).json({ error: 'Precious metals trading is not enabled in this game' });
-  if (game.status === 'pending') return res.status(400).json({ error: 'Game has not started yet' });
-  if (game.status === 'ended')   return res.status(400).json({ error: 'Game has ended' });
-
-  let { symbol, oz } = req.body || {};
-  symbol = symbol?.toUpperCase(); oz = parseFloat(oz);
-  if (!symbol || isNaN(oz) || oz <= 0) return res.status(400).json({ error: 'symbol and positive oz are required' });
-  if (!validSymbol(symbol)) return res.status(400).json({ error: 'Invalid symbol format' });
-  if (!validShares(oz))     return res.status(400).json({ error: 'Quantity must be between 0 and 1,000,000' });
-
-  const metal = PRECIOUS_METALS.find(m => m.symbol === symbol);
-  if (!metal) return res.status(400).json({ error: `${symbol} is not a supported precious metal` });
-
-  const holding = db.prepare('SELECT * FROM holdings WHERE user_id = ? AND game_id = ? AND symbol = ?').get(req.user.id, game.id, symbol);
-  if (!holding || holding.shares < oz - 0.000001)
-    return res.status(400).json({ error: `Insufficient — you own ${holding ? holding.shares.toFixed(6) : 0} oz of ${metal.name}` });
-
-  let quote;
-  try { quote = await getQuote(symbol); } catch { return res.status(400).json({ error: 'Unable to fetch price — market data unavailable' }); }
-
-  applyFill(req.user.id, game.id, symbol, metal.name, 'sell', oz, quote.price);
-  const updated = db.prepare('SELECT * FROM portfolios WHERE user_id = ? AND game_id = ?').get(req.user.id, game.id);
-  audit(req, 'METALS_SELL', `${oz} oz ${metal.name} @ $${quote.price.toFixed(2)}`);
-  res.json({ filled: true, message: `Sold ${oz} oz of ${metal.name} at $${quote.price.toFixed(2)}/oz`, cash_balance: updated.cash_balance });
-});
-
-// ─── Forex ───────────────────────────────────────────────────────────────────
-
-app.get('/api/forex/list', requireAuth, async (req, res) => {
-  const enriched = await Promise.all(FOREX_PAIRS.map(async f => {
-    try {
-      const q = await getQuote(f.symbol);
-      return { ...f, price: q.price, change: q.change, changePercent: q.changePercent, marketState: q.marketState };
-    } catch {
-      return { ...f, price: null, change: 0, changePercent: 0, marketState: 'CLOSED' };
-    }
-  }));
-  res.json(enriched);
-});
-
-app.post('/api/games/:gameId/forex/buy', requireAuth, loadGame, async (req, res) => {
-  const game = req.game;
-  if (!game.allow_forex)         return res.status(400).json({ error: 'Forex trading is not enabled in this game' });
-  if (game.status === 'pending') return res.status(400).json({ error: 'Game has not started yet' });
-  if (game.status === 'ended')   return res.status(400).json({ error: 'Game has ended — no more trades' });
-
-  let { symbol, quantity } = req.body || {};
-  symbol = symbol?.toUpperCase(); quantity = parseFloat(quantity);
-  if (!symbol || isNaN(quantity) || quantity <= 0) return res.status(400).json({ error: 'symbol and positive quantity are required' });
-  if (!validSymbol(symbol)) return res.status(400).json({ error: 'Invalid symbol format' });
-  if (!validShares(quantity)) return res.status(400).json({ error: 'Quantity must be between 0 and 1,000,000' });
-
-  const pair = FOREX_PAIRS.find(f => f.symbol === symbol);
-  if (!pair) return res.status(400).json({ error: `${symbol} is not a supported forex pair` });
-
-  let quote;
-  try { quote = await getQuote(symbol); } catch { return res.status(400).json({ error: 'Unable to fetch price — market data unavailable' }); }
-
-  const portfolio = ensurePortfolio(req.user.id, game.id, game.starting_cash);
-  const cost = +(quote.price * quantity).toFixed(6);
-  if (!validTotal(cost)) return res.status(400).json({ error: 'Invalid cost calculation' });
-  const avail = availableCash(req.user.id, game.id, portfolio);
-  if (cost > avail) return res.status(400).json({ error: `Insufficient funds — cost $${cost.toFixed(2)}, available $${avail.toFixed(2)}` });
-
-  applyFill(req.user.id, game.id, symbol, pair.name, 'buy', quantity, quote.price);
-  const updated = db.prepare('SELECT * FROM portfolios WHERE user_id = ? AND game_id = ?').get(req.user.id, game.id);
-  audit(req, 'FOREX_BUY', `${quantity} units ${pair.name} @ ${quote.price.toFixed(5)}`);
-  res.json({ filled: true, message: `Bought ${quantity} units of ${pair.name} at ${quote.price.toFixed(5)}`, cash_balance: updated.cash_balance, total_cost: cost });
-});
-
-app.post('/api/games/:gameId/forex/sell', requireAuth, loadGame, async (req, res) => {
-  const game = req.game;
-  if (!game.allow_forex)         return res.status(400).json({ error: 'Forex trading is not enabled in this game' });
-  if (game.status === 'pending') return res.status(400).json({ error: 'Game has not started yet' });
-  if (game.status === 'ended')   return res.status(400).json({ error: 'Game has ended' });
-
-  let { symbol, quantity } = req.body || {};
-  symbol = symbol?.toUpperCase(); quantity = parseFloat(quantity);
-  if (!symbol || isNaN(quantity) || quantity <= 0) return res.status(400).json({ error: 'symbol and positive quantity are required' });
-  if (!validSymbol(symbol)) return res.status(400).json({ error: 'Invalid symbol format' });
-  if (!validShares(quantity)) return res.status(400).json({ error: 'Quantity must be between 0 and 1,000,000' });
-
-  const pair = FOREX_PAIRS.find(f => f.symbol === symbol);
-  if (!pair) return res.status(400).json({ error: `${symbol} is not a supported forex pair` });
-
-  const holding = db.prepare('SELECT * FROM holdings WHERE user_id = ? AND game_id = ? AND symbol = ?').get(req.user.id, game.id, symbol);
-  if (!holding || holding.shares < quantity - 0.000001)
-    return res.status(400).json({ error: `Insufficient — you own ${holding ? holding.shares.toFixed(2) : 0} units of ${pair.name}` });
-
-  let quote;
-  try { quote = await getQuote(symbol); } catch { return res.status(400).json({ error: 'Unable to fetch price — market data unavailable' }); }
-
-  applyFill(req.user.id, game.id, symbol, pair.name, 'sell', quantity, quote.price);
-  const updated = db.prepare('SELECT * FROM portfolios WHERE user_id = ? AND game_id = ?').get(req.user.id, game.id);
-  audit(req, 'FOREX_SELL', `${quantity} units ${pair.name} @ ${quote.price.toFixed(5)}`);
-  res.json({ filled: true, message: `Sold ${quantity} units of ${pair.name} at ${quote.price.toFixed(5)}`, cash_balance: updated.cash_balance });
-});
-
-// ─── Crypto ───────────────────────────────────────────────────────────────────
-
-app.get('/api/crypto/list', requireAuth, async (req, res) => {
-  const enriched = await Promise.all(CRYPTO_ASSETS.map(async c => {
-    try {
-      const q = await getQuote(c.symbol);
-      return { ...c, price: q.price, change: q.change, changePercent: q.changePercent, marketState: q.marketState };
-    } catch {
-      return { ...c, price: null, change: 0, changePercent: 0, marketState: 'CLOSED' };
-    }
-  }));
-  res.json(enriched);
-});
-
-app.post('/api/games/:gameId/crypto/buy', requireAuth, loadGame, async (req, res) => {
-  const game = req.game;
-  if (!game.allow_crypto)        return res.status(400).json({ error: 'Crypto trading is not enabled in this game' });
-  if (game.status === 'pending') return res.status(400).json({ error: 'Game has not started yet' });
-  if (game.status === 'ended')   return res.status(400).json({ error: 'Game has ended — no more trades' });
-
-  let { symbol, quantity } = req.body || {};
-  symbol = symbol?.toUpperCase(); quantity = parseFloat(quantity);
-  if (!symbol || isNaN(quantity) || quantity <= 0) return res.status(400).json({ error: 'symbol and positive quantity are required' });
-  if (!validSymbol(symbol)) return res.status(400).json({ error: 'Invalid symbol format' });
-  if (!validShares(quantity)) return res.status(400).json({ error: 'Quantity must be between 0 and 1,000,000' });
-
-  const asset = CRYPTO_ASSETS.find(c => c.symbol === symbol);
-  if (!asset) return res.status(400).json({ error: `${symbol} is not a supported crypto asset` });
-
-  let quote;
-  try { quote = await getQuote(symbol); } catch { return res.status(400).json({ error: 'Unable to fetch price — market data unavailable' }); }
-
-  const portfolio = ensurePortfolio(req.user.id, game.id, game.starting_cash);
-  const cost = +(quote.price * quantity).toFixed(6);
-  if (!validTotal(cost)) return res.status(400).json({ error: 'Invalid cost calculation' });
-  const avail = availableCash(req.user.id, game.id, portfolio);
-  if (cost > avail) return res.status(400).json({ error: `Insufficient funds — cost $${cost.toFixed(2)}, available $${avail.toFixed(2)}` });
-
-  applyFill(req.user.id, game.id, symbol, asset.name, 'buy', quantity, quote.price);
-  const updated = db.prepare('SELECT * FROM portfolios WHERE user_id = ? AND game_id = ?').get(req.user.id, game.id);
-  audit(req, 'CRYPTO_BUY', `${quantity} ${asset.name} @ $${quote.price.toFixed(2)}`);
-  res.json({ filled: true, message: `Bought ${quantity} ${asset.name} at $${quote.price.toFixed(2)}`, cash_balance: updated.cash_balance, total_cost: cost });
-});
-
-app.post('/api/games/:gameId/crypto/sell', requireAuth, loadGame, async (req, res) => {
-  const game = req.game;
-  if (!game.allow_crypto)        return res.status(400).json({ error: 'Crypto trading is not enabled in this game' });
-  if (game.status === 'pending') return res.status(400).json({ error: 'Game has not started yet' });
-  if (game.status === 'ended')   return res.status(400).json({ error: 'Game has ended' });
-
-  let { symbol, quantity } = req.body || {};
-  symbol = symbol?.toUpperCase(); quantity = parseFloat(quantity);
-  if (!symbol || isNaN(quantity) || quantity <= 0) return res.status(400).json({ error: 'symbol and positive quantity are required' });
-  if (!validSymbol(symbol)) return res.status(400).json({ error: 'Invalid symbol format' });
-  if (!validShares(quantity)) return res.status(400).json({ error: 'Quantity must be between 0 and 1,000,000' });
-
-  const asset = CRYPTO_ASSETS.find(c => c.symbol === symbol);
-  if (!asset) return res.status(400).json({ error: `${symbol} is not a supported crypto asset` });
-
-  const holding = db.prepare('SELECT * FROM holdings WHERE user_id = ? AND game_id = ? AND symbol = ?').get(req.user.id, game.id, symbol);
-  if (!holding || holding.shares < quantity - 0.000001)
-    return res.status(400).json({ error: `Insufficient — you own ${holding ? holding.shares.toFixed(8) : 0} ${asset.name}` });
-
-  let quote;
-  try { quote = await getQuote(symbol); } catch { return res.status(400).json({ error: 'Unable to fetch price — market data unavailable' }); }
-
-  applyFill(req.user.id, game.id, symbol, asset.name, 'sell', quantity, quote.price);
-  const updated = db.prepare('SELECT * FROM portfolios WHERE user_id = ? AND game_id = ?').get(req.user.id, game.id);
-  audit(req, 'CRYPTO_SELL', `${quantity} ${asset.name} @ $${quote.price.toFixed(2)}`);
-  res.json({ filled: true, message: `Sold ${quantity} ${asset.name} at $${quote.price.toFixed(2)}`, cash_balance: updated.cash_balance });
-});
+registerSpotRoutes({ route: 'metals', listPath: '/api/metals/list', catalogue: PRECIOUS_METALS, flag: 'allow_metals', label: 'Precious metals', qtyField: 'oz',       unitSuffix: ' oz',    auditPrefix: 'METALS', ownDecimals: 6 });
+registerSpotRoutes({ route: 'forex',  listPath: '/api/forex/list',  catalogue: FOREX_PAIRS,     flag: 'allow_forex',  label: 'Forex',           qtyField: 'quantity', unitSuffix: ' units', auditPrefix: 'FOREX',  priceDecimals: 5, ownDecimals: 2 });
+registerSpotRoutes({ route: 'crypto', listPath: '/api/crypto/list', catalogue: CRYPTO_ASSETS,   flag: 'allow_crypto', label: 'Crypto',          qtyField: 'quantity', unitSuffix: '',       auditPrefix: 'CRYPTO', ownDecimals: 8 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ASSET CATALOGUE — unified list of everything tradeable in a game
@@ -1760,9 +1625,14 @@ async function fillOrder(order, cachedPrice = null) {
 
   if (order.type === 'buy') {
     const portfolio = db.prepare('SELECT * FROM portfolios WHERE user_id = ? AND game_id = ?').get(order.user_id, order.game_id);
-    if (!portfolio || portfolio.cash_balance < total) {
+    // Available cash = balance minus reservations held by OTHER pending buys.
+    // This order's own reservation is spendable by it; without this check a fill
+    // whose price gapped above its reservation could eat cash reserved elsewhere.
+    const otherReserved = pendingReserved(order.user_id, order.game_id) - (order.reserved_amount || 0);
+    const available     = (portfolio?.cash_balance ?? 0) - Math.max(0, otherReserved);
+    if (!portfolio || available < total) {
       db.prepare("UPDATE pending_orders SET status='rejected', reject_reason=?, filled_at=datetime('now'), filled_price=? WHERE id=?")
-        .run(`Insufficient funds at fill time ($${total.toFixed(2)} needed, $${portfolio?.cash_balance?.toFixed(2) || '0'} available)`, price, order.id);
+        .run(`Insufficient funds at fill time ($${total.toFixed(2)} needed, $${Math.max(0, available).toFixed(2)} available)`, price, order.id);
       return;
     }
   } else {
@@ -1808,6 +1678,40 @@ async function processAllPendingOrders() {
     } catch (err) {
       console.error(`[Orders] Error on order ${order.id}:`, err.message);
     }
+  }
+}
+
+// ── Futures margin-call liquidation ───────────────────────────────────────────
+// When a position's unrealized loss reaches the margin held against it, the
+// position is force-closed at market. Caps a player's loss at their posted
+// margin and prevents unbounded negative cash from leveraged positions.
+async function liquidateUnderwaterFutures() {
+  const positions = db.prepare(
+    `SELECT fp.* FROM futures_positions fp
+     JOIN game_config g ON g.id = fp.game_id
+     WHERE fp.contracts > 0 AND g.is_active = 1`
+  ).all();
+  if (!positions.length) return;
+  const symbols = [...new Set(positions.map(p => p.symbol))];
+  const prices  = {};
+  await Promise.allSettled(symbols.map(async s => {
+    try { prices[s] = (await getQuote(s)).price; } catch {}
+  }));
+  for (const p of positions) {
+    const price = prices[p.symbol];
+    if (price == null) continue;
+    const pnl = (p.direction === 'long' ? price - p.entry_price : p.entry_price - price) * p.contracts;
+    if (pnl > -p.margin_held) continue; // loss hasn't consumed the margin yet
+    const cashReturn = Math.max(0, +(p.margin_held + pnl).toFixed(6)); // loss capped at margin
+    try {
+      db.transaction(() => {
+        db.prepare('UPDATE portfolios SET cash_balance = cash_balance + ? WHERE user_id = ? AND game_id = ?').run(cashReturn, p.user_id, p.game_id);
+        db.prepare('UPDATE futures_positions SET contracts = 0, margin_held = 0 WHERE id = ?').run(p.id);
+        db.prepare('INSERT INTO futures_transactions (user_id, game_id, symbol, name, direction, action, contracts, price, margin_used, realized_pnl) VALUES (?,?,?,?,?,?,?,?,?,?)')
+          .run(p.user_id, p.game_id, p.symbol, p.name, p.direction, 'close', p.contracts, price, p.margin_held, -p.margin_held);
+      })();
+      console.log(`[Futures] Margin call: liquidated ${p.contracts} ${p.symbol} (user ${p.user_id}, game ${p.game_id}) at $${price.toFixed(2)}`);
+    } catch (err) { console.error('[Futures] liquidation failed:', err.message); }
   }
 }
 
@@ -1901,6 +1805,7 @@ async function maybeRunDailyEmails() {
 processAllPendingOrders();
 setInterval(async () => {
   await processAllPendingOrders();
+  await liquidateUnderwaterFutures();
   await maybeRunDailyEmails();
 }, 60_000);
 
@@ -1934,16 +1839,25 @@ app.get('/api/admin/update/status', requireAdmin, (req, res) => {
   }
 });
 
-// Apply update via SSE stream — EventSource can't set headers so we accept JWT in query string
+// One-time, short-lived tokens for the SSE update stream. EventSource can't set
+// headers, and putting the session JWT in a query string would leak it into
+// access/proxy logs — so the client first POSTs here (with normal auth) for a
+// single-use 60-second token.
+const _updateTokens = new Map(); // token → { exp, username }
+app.post('/api/admin/update/token', requireAdmin, (req, res) => {
+  for (const [t, rec] of _updateTokens) if (Date.now() > rec.exp) _updateTokens.delete(t);
+  const t = crypto.randomBytes(32).toString('hex');
+  _updateTokens.set(t, { exp: Date.now() + 60_000, username: req.user.username });
+  res.json({ token: t });
+});
+
+// Apply update via SSE stream — authenticated by a one-time update token
 app.get('/api/admin/update/apply', (req, res) => {
-  // Manually validate the JWT from query string
   const raw = req.query.token;
-  if (!raw) return res.status(401).end();
-  let payload;
-  try { payload = jwt.verify(raw, JWT_SECRET); } catch { return res.status(401).end(); }
-  if (isBlacklisted(payload.jti)) return res.status(401).end();
-  const dbUser = db.prepare('SELECT username, is_admin FROM users WHERE id = ?').get(payload.id);
-  if (!dbUser?.is_admin) return res.status(403).end();
+  const rec = raw ? _updateTokens.get(raw) : null;
+  if (rec) _updateTokens.delete(raw); // single use
+  if (!rec || Date.now() > rec.exp) return res.status(401).end();
+  const dbUser = { username: rec.username };
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');

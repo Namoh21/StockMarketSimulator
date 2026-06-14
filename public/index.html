@@ -3011,7 +3011,7 @@ const App = (() => {
     finally { btn.disabled = false; btn.textContent = 'Check for Updates'; }
   }
 
-  function applyUpdate() {
+  async function applyUpdate() {
     if (!confirm('This will pull the latest code from GitHub and restart the server.\n\nAll active sessions will be briefly disconnected.\n\nProceed?')) return;
     const logWrap = document.getElementById('update-log-wrap');
     const logEl   = document.getElementById('update-log');
@@ -3026,7 +3026,20 @@ const App = (() => {
 
     if (_updateEvtSource) { _updateEvtSource.close(); _updateEvtSource = null; }
 
-    const evtSrc = new EventSource(`/api/admin/update/apply?token=${encodeURIComponent(token)}`);
+    // Exchange the session token for a one-time update token (the session JWT
+    // must never appear in a URL where it would end up in server/proxy logs)
+    let updateToken;
+    try {
+      const tokRes = await fetch('/api/admin/update/token', { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+      if (!tokRes.ok) throw new Error('Could not authorize update');
+      updateToken = (await tokRes.json()).token;
+    } catch (err) {
+      errEl.textContent = err.message;
+      applyBtn.disabled = false; applyBtn.textContent = '⬆ Apply Update & Restart';
+      return;
+    }
+
+    const evtSrc = new EventSource(`/api/admin/update/apply?token=${encodeURIComponent(updateToken)}`);
     _updateEvtSource = evtSrc;
 
     evtSrc.addEventListener('log', e => {
