@@ -33,6 +33,16 @@ echo -e "${N}"
 # ── Sanity checks ─────────────────────────────────────────────────────────────
 step "Pre-flight checks"
 
+# Don't run the whole script as root: git/npm would then write files owned by
+# root, which the stockarena service (running as a normal user) can't update
+# later — breaking the in-app "Check for updates" feature with a
+# "insufficient permission for adding an object to repository database" error.
+# The two commands that need elevation (systemctl, copying the service unit)
+# already call sudo themselves.
+if [[ "$EUID" -eq 0 ]]; then
+    error "Don't run this with sudo/as root — run 'bash update.sh' instead. (sudo is only needed for systemctl/service-file steps, which this script invokes itself.)"
+fi
+
 [[ -f "$INSTALL_DIR/server.js" ]] || error "server.js not found in $INSTALL_DIR — run from the project root."
 [[ -d "$INSTALL_DIR/.git" ]]     || error "Not a git repository. Cannot update."
 command -v node &>/dev/null      || error "Node.js not found. Re-run install.sh."
