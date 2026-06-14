@@ -8,6 +8,7 @@ import crypto from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import db from './db.js';
+import { applyFill, pendingReserved, pendingSellShares, availableCash, validTotal } from './trading.js';
 import { configureMailer, isEmailEnabled, sendEmail, buildTradeEmail, buildDailySummaryEmail, buildRankingEmail, buildTestEmail } from './email.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -26,8 +27,11 @@ const JWT_SECRET = (() => {
 })();
 
 // ── AES-256-GCM field encryption (protects SMTP password, join passwords in DB) ─
-// Key is derived from JWT_SECRET — changing the secret invalidates all encrypted fields.
-const _ENC_KEY = crypto.scryptSync(JWT_SECRET, 'stockarena-field-enc-v1', 32);
+// Prefer a dedicated ENCRYPTION_KEY so rotating JWT_SECRET (e.g. to invalidate
+// sessions) doesn't also brick stored SMTP/join passwords. Falls back to
+// deriving from JWT_SECRET for installs that haven't set ENCRYPTION_KEY yet —
+// existing encrypted fields keep decrypting as before.
+const _ENC_KEY = crypto.scryptSync(process.env.ENCRYPTION_KEY || JWT_SECRET, 'stockarena-field-enc-v1', 32);
 
 function encryptField(plaintext) {
   if (!plaintext) return null;
@@ -445,7 +449,6 @@ function audit(req, action, detail = '') {
 const SYMBOL_RE = /^[A-Z0-9.=^-]{1,20}$/;
 function validSymbol(s)  { return typeof s === 'string' && SYMBOL_RE.test(s); }
 function validShares(n)  { return Number.isFinite(n) && n > 0 && n <= 1_000_000; }
-function validTotal(n)   { return Number.isFinite(n) && n >= 0; } // guards against NaN/Infinity in price×shares
 const ALLOWED_MARKETS    = new Set(['NYSE', 'NASDAQ', 'AMEX', 'ALL']);
 
 // ── Game middleware ───────────────────────────────────────────────────────────
@@ -472,6 +475,21 @@ function loadGame(req, res, next) {
   }
 }
 
+// Private games are invisible to non-members (prevents enumeration of titles,
+// settings, and standings) — admins can always see them.
+function gameVisibleToUser(game, userId) {
+  if (!game.is_private) return true;
+  const joined = !!db.prepare('SELECT id FROM portfolios WHERE user_id = ? AND game_id = ?').get(userId, game.id);
+  if (joined) return true;
+  return !!db.prepare('SELECT is_admin FROM users WHERE id = ?').get(userId)?.is_admin;
+}
+
+// Returns 404 for private games the user can't see — call after loadGame.
+function requireGameVisible(req, res, next) {
+  if (!gameVisibleToUser(req.game, req.user.id)) return res.status(404).json({ error: 'Game not found' });
+  next();
+}
+
 // Trading gate — requires an approved account AND an existing portfolio (i.e. the
 // user actually joined the game through /join, passing any private-game password).
 // Never auto-creates portfolios: that would bypass approval and join passwords.
@@ -484,26 +502,6 @@ function requireJoined(req, res, next) {
     return res.status(403).json({ error: 'not_joined', message: 'Join this game before trading.' });
   req.portfolio = p;
   next();
-}
-
-// Sum of cash held by pending buy orders — these funds are reserved and unavailable.
-function pendingReserved(userId, gameId) {
-  return db.prepare(
-    "SELECT COALESCE(SUM(reserved_amount),0) as total FROM pending_orders WHERE user_id=? AND game_id=? AND type='buy' AND status='pending'"
-  ).get(userId, gameId)?.total ?? 0;
-}
-
-// Shares of a symbol already committed to pending sell orders — can't be sold twice.
-function pendingSellShares(userId, gameId, symbol) {
-  return db.prepare(
-    "SELECT COALESCE(SUM(shares),0) as total FROM pending_orders WHERE user_id=? AND game_id=? AND symbol=? AND type='sell' AND status='pending'"
-  ).get(userId, gameId, symbol)?.total ?? 0;
-}
-
-// Cash the user can actually spend: balance minus anything locked in pending buys.
-function availableCash(userId, gameId, portfolio = null) {
-  const p = portfolio ?? db.prepare('SELECT cash_balance FROM portfolios WHERE user_id=? AND game_id=?').get(userId, gameId);
-  return Math.max(0, (p?.cash_balance ?? 0) - pendingReserved(userId, gameId));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -707,14 +705,11 @@ app.post('/api/games', requireAdmin, (req, res) => {
   res.json({ ...game, markets: JSON.parse(game.markets), status: gameStatus(game) });
 });
 
-app.get('/api/games/:gameId', requireAuth, loadGame, (req, res) => {
+app.get('/api/games/:gameId', requireAuth, loadGame, requireGameVisible, (req, res) => {
   const g = db.prepare('SELECT * FROM game_config WHERE id = ?').get(req.game.id);
   const playerCount = db.prepare('SELECT COUNT(*) as c FROM portfolios WHERE game_id = ?').get(g.id).c;
   const userJoined  = !!db.prepare('SELECT id FROM portfolios WHERE user_id = ? AND game_id = ?').get(req.user.id, g.id);
   const dbUser = db.prepare('SELECT is_admin FROM users WHERE id = ?').get(req.user.id);
-  // Non-admins cannot see private games they haven't joined (prevents enumeration)
-  if (g.is_private && !userJoined && !dbUser?.is_admin)
-    return res.status(404).json({ error: 'Game not found' });
   // Admins see the decrypted join_password so they can share it; regular users never see it
   if (dbUser?.is_admin) {
     const decrypted = g.join_password ? (decryptField(g.join_password) ?? g.join_password) : null;
@@ -817,14 +812,8 @@ app.post('/api/games/:gameId/join', requireAuth, loadGame, (req, res) => {
 });
 
 // Leaderboard
-app.get('/api/games/:gameId/leaderboard', requireAuth, loadGame, async (req, res) => {
+app.get('/api/games/:gameId/leaderboard', requireAuth, loadGame, requireGameVisible, async (req, res) => {
   const game = req.game;
-  // Private games: only members and admins may view standings (prevents username leak)
-  if (game.is_private) {
-    const joined  = !!db.prepare('SELECT id FROM portfolios WHERE user_id = ? AND game_id = ?').get(req.user.id, game.id);
-    const isAdmin = !!db.prepare('SELECT is_admin FROM users WHERE id = ?').get(req.user.id)?.is_admin;
-    if (!joined && !isAdmin) return res.status(404).json({ error: 'Game not found' });
-  }
   const portfolios = db.prepare('SELECT p.*, u.username FROM portfolios p JOIN users u ON p.user_id = u.id WHERE p.game_id = ?').all(game.id);
   const holdings   = db.prepare('SELECT * FROM holdings WHERE game_id = ? AND shares > 0').all(game.id);
   const futures    = game.allow_futures
@@ -980,41 +969,6 @@ app.get('/api/stocks/chart/:symbol', requireAuth, async (req, res) => {
 // TRADES & ORDERS (per game)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// ── Core fill logic (shared by immediate trades and background processor) ─────
-function applyFill(userId, gameId, symbol, companyName, type, shares, price) {
-  const total = +(price * shares).toFixed(6);
-  if (!validTotal(total)) throw new Error('Invalid trade total — numeric overflow or NaN');
-  db.transaction(() => {
-    if (type === 'buy') {
-      // Atomic conditional deduct — WHERE cash_balance >= total guarantees no overdraft
-      // even under concurrent requests or stale pre-checks.
-      const result = db.prepare(
-        'UPDATE portfolios SET cash_balance = cash_balance - ? WHERE user_id = ? AND game_id = ? AND cash_balance >= ?'
-      ).run(total, userId, gameId, total);
-      if (result.changes === 0) throw new Error(`Insufficient funds — need $${total.toFixed(2)}`);
-      const ex = db.prepare('SELECT * FROM holdings WHERE user_id = ? AND game_id = ? AND symbol = ?').get(userId, gameId, symbol);
-      if (ex) {
-        const ns = ex.shares + shares;
-        db.prepare('UPDATE holdings SET shares=?, avg_cost=?, company_name=? WHERE id=?')
-          .run(ns, (ex.avg_cost * ex.shares + price * shares) / ns, companyName, ex.id);
-      } else {
-        db.prepare('INSERT INTO holdings (user_id,game_id,symbol,company_name,shares,avg_cost) VALUES (?,?,?,?,?,?)').run(userId, gameId, symbol, companyName, shares, price);
-      }
-    } else {
-      // Atomic conditional deduct — WHERE shares >= requested guarantees the same
-      // shares can't be sold twice under concurrent requests or stale pre-checks.
-      const result = db.prepare(
-        `UPDATE holdings SET shares = CASE WHEN shares - ? < 0.000001 THEN 0 ELSE shares - ? END
-         WHERE user_id = ? AND game_id = ? AND symbol = ? AND shares >= ? - 0.000001`
-      ).run(shares, shares, userId, gameId, symbol, shares);
-      if (result.changes === 0) throw new Error(`Insufficient shares of ${symbol}`);
-      db.prepare('UPDATE portfolios SET cash_balance = cash_balance + ? WHERE user_id = ? AND game_id = ?').run(total, userId, gameId);
-    }
-    db.prepare('INSERT INTO transactions (user_id,game_id,symbol,company_name,type,shares,price,total) VALUES (?,?,?,?,?,?,?,?)')
-      .run(userId, gameId, symbol, companyName, type, shares, price, total);
-  })();
-  return total;
-}
 
 // ── Market status ──────────────────────────────────────────────────────────────
 app.get('/api/market/status', requireAuth, (req, res) => res.json(marketStatus()));
@@ -1376,7 +1330,7 @@ registerSpotRoutes({ route: 'crypto', listPath: '/api/crypto/list', catalogue: C
 // Stocks are dynamically searchable (no fixed universe), so this returns
 // guidance + endpoints rather than a full ticker list.
 // Metals and futures are fixed catalogues — returned with live prices.
-app.get('/api/games/:gameId/assets', requireAuth, loadGame, async (req, res) => {
+app.get('/api/games/:gameId/assets', requireAuth, loadGame, requireGameVisible, async (req, res) => {
   const game = req.game;
   const base  = `/api/games/${game.id}`;
 
@@ -1801,13 +1755,22 @@ async function maybeRunDailyEmails() {
   }
 }
 
-// Run immediately at startup then every 60 s
-processAllPendingOrders();
-setInterval(async () => {
-  await processAllPendingOrders();
-  await liquidateUnderwaterFutures();
-  await maybeRunDailyEmails();
-}, 60_000);
+// Run immediately at startup then every 60 s. Guarded so a slow cycle (e.g.
+// Yahoo Finance is sluggish) can't overlap with the next tick.
+let _backgroundCycleRunning = false;
+async function runBackgroundCycle() {
+  if (_backgroundCycleRunning) return;
+  _backgroundCycleRunning = true;
+  try {
+    await processAllPendingOrders();
+    await liquidateUnderwaterFutures();
+    await maybeRunDailyEmails();
+  } finally {
+    _backgroundCycleRunning = false;
+  }
+}
+runBackgroundCycle();
+setInterval(runBackgroundCycle, 60_000);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SOFTWARE UPDATE (admin only)

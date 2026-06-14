@@ -3,7 +3,8 @@ import { fileURLToPath } from 'url';
 import path from 'path';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const db = new Database(path.join(__dirname, 'stockgame.db'));
+// DB_PATH override lets the test suite point at a throwaway database
+const db = new Database(process.env.DB_PATH || path.join(__dirname, 'stockgame.db'));
 
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
