@@ -1,6 +1,6 @@
 {
   "name": "stock-trading-game",
-  "version": "1.1.2",
+  "version": "1.1.3",
   "description": "Stock Trading Simulation Game",
   "main": "server.js",
   "type": "module",
